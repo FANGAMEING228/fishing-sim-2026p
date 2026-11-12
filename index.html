@@ -543,38 +543,84 @@ function buildBait(b) {
 }
 BAITS.forEach(b => { b.spr = buildBait(b); });
 
-function buildFloat() {
+function shade(hex, amt) {
+  const n = parseInt(hex.slice(1), 16);
+  let r = (n >> 16) + amt, g2 = ((n >> 8) & 255) + amt, b = (n & 255) + amt;
+  r = clamp(r, 0, 255); g2 = clamp(g2, 0, 255); b = clamp(b, 0, 255);
+  return '#' + ((r << 16) | (g2 << 8) | b).toString(16).padStart(6, '0');
+}
+function buildFloatCol(tip, ant, top, bot) {
   const [c, g] = makeCv(7, 17);
-  P(g, '#e03030', 3, 0, 1, 2);      // вершинка
-  P(g, '#e8e4d8', 3, 2, 1, 4);      // антенка
-  P(g, '#d23430', 2, 6, 3, 2);      // тіло (верх, червоне)
-  P(g, '#d23430', 1, 8, 5, 2);
-  P(g, '#a82420', 2, 7, 3, 1);
-  P(g, '#f0ece0', 1, 10, 5, 2);     // низ, біле
-  P(g, '#f0ece0', 2, 12, 3, 2);
-  P(g, '#c8c4b8', 2, 13, 3, 1);
-  P(g, '#2a2e33', 3, 14, 1, 3);     // кіль
+  P(g, tip, 3, 0, 1, 2);              // вершинка
+  P(g, ant, 3, 2, 1, 4);              // антенка
+  P(g, shade(top, -34), 2, 7, 3, 1);  // тінь на тілі
+  P(g, top, 2, 6, 3, 2);              // тіло (верх)
+  P(g, top, 1, 8, 5, 2);
+  P(g, bot, 1, 10, 5, 2);             // низ
+  P(g, bot, 2, 12, 3, 2);
+  P(g, shade(bot, -30), 2, 13, 3, 1);
+  P(g, '#2a2e33', 3, 14, 1, 3);       // кіль
   return { frames: [c], w: 7, h: 17 };
 }
-const FLOAT_SPR = buildFloat();
+/* ---------------- КАСТОМНІ ПОПЛАВКИ: пресети + свій колір ---------------- */
+const FLOATS = [
+  { id: 'f0', name: 'КЛАСИЧНИЙ', tip: '#e03030', ant: '#e8e4d8', top: '#d23430', bot: '#f0ece0', free: true },
+  { id: 'f1', name: 'ЛІМОННИЙ',  tip: '#101418', ant: '#ffd54a', top: '#e8c020', bot: '#f8f0c0', price: 40 },
+  { id: 'f2', name: 'ЯЛИНКА',    tip: '#e8d83a', ant: '#101418', top: '#2a9a4a', bot: '#d8e8dc', price: 60 },
+  { id: 'f3', name: 'НІЧНИЙ',    tip: '#f0f05a', ant: '#b8e84a', top: '#30343a', bot: '#eaffb0', price: 80 },
+  { id: 'f4', name: 'НЕБО',      tip: '#e03030', ant: '#f0f4f8', top: '#2a6ad8', bot: '#e8f0fc', price: 60 },
+  { id: 'f5', name: 'ВОГОНЬ',    tip: '#f8f0a0', ant: '#e8a23a', top: '#e85818', bot: '#ffd54a', price: 50 },
+  { id: 'f6', name: 'РОЖЕВИЙ',   tip: '#e03030', ant: '#f8f0f8', top: '#e868b0', bot: '#fce8f2', price: 70 },
+  { id: 'f7', name: 'МІДНИЙ',    tip: '#101418', ant: '#c87838', top: '#a85a20', bot: '#e8c8a0', price: 90 }
+];
+FLOATS.forEach(f => { f.spr = buildFloatCol(f.tip, f.ant, f.top, f.bot); });
+let FLOAT_CUR = null, FLOAT_CUSTOM_SPR = null;
+function customFloatSpr() {
+  const c = S.floatCustom || { tip: '#e03030', ant: '#e8e4d8', top: '#d23430', bot: '#f0ece0' };
+  if (!FLOAT_CUSTOM_SPR) FLOAT_CUSTOM_SPR = buildFloatCol(c.tip, c.ant, c.top, c.bot);
+  return FLOAT_CUSTOM_SPR;
+}
+function rebuildCustomFloat() {
+  const c = S.floatCustom;
+  FLOAT_CUSTOM_SPR = c ? buildFloatCol(c.tip, c.ant, c.top, c.bot) : null;
+}
+function rebuildFloat() {
+  const id = S.floatId || 'f0';
+  if (id === 'custom') FLOAT_CUR = customFloatSpr();
+  else { const f = FLOATS.find(x => x.id === id) || FLOATS[0]; FLOAT_CUR = f.spr; }
+}
+function curFloatSpr() { if (!FLOAT_CUR) rebuildFloat(); return FLOAT_CUR; }
+/* ---------------- годівниця для фідера ---------------- */
+function buildFeeder() {
+  const [c, g] = makeCv(9, 8);
+  P(g, '#3a4046', 4, 0, 1, 1);        // вушко
+  P(g, '#8a929c', 1, 1, 7, 6);        // корпус-клітка
+  P(g, '#6a5a38', 2, 2, 5, 4);        // корм
+  P(g, '#8a6c3c', 2, 3, 5, 2);
+  P(g, '#3a4046', 1, 1, 7, 1); P(g, '#3a4046', 1, 6, 7, 1);
+  return { frames: [c], w: 9, h: 8 };
+}
+const FEEDER_SPR = buildFeeder();
 
 function buildRod(kind) {
-  const len = kind === 'spin' ? 66 : 80;
+  const len = kind === 'float' ? 80 : 66;
   const [c, g] = makeCv(len + 6, 14);
   const bx = 2, py = 7;
-  if (kind === 'spin') {
-    // котушка
+  if (kind !== 'float') {
+    // спінінг і фідер: з котушкою
     P(g, '#3a4046', bx + 5, py + 1, 6, 4);
     P(g, '#20242a', bx + 6, py + 2, 4, 2);
     P(g, '#9aa2ab', bx + 10, py + 5, 2, 1);
     // ручка
     P(g, '#23251f', bx, py - 1, 16, 3);
     for (let x = bx + 2; x < bx + 15; x += 3) P(g, '#34362c', x, py - 1, 1, 3);
-    // бланк: помаранчевий -> чорний -> білий (як на фото вудки)
-    P(g, '#c96f22', bx + 16, py, 22, 2);
-    P(g, '#a85718', bx + 16, py + 1, 22, 1);
+    // бланк: спінінг помаранчевий, фідер зелений з квівертипом
+    const b1 = kind === 'feeder' ? '#4a7a3a' : '#c96f22';
+    const b2 = kind === 'feeder' ? '#35602a' : '#a85718';
+    P(g, b1, bx + 16, py, 22, 2);
+    P(g, b2, bx + 16, py + 1, 22, 1);
     P(g, '#26282a', bx + 38, py, 12, 1);
-    P(g, '#e8e4d4', bx + 50, py, 16, 1);
+    P(g, kind === 'feeder' ? '#f4e88a' : '#e8e4d4', bx + 50, py, 16, 1);
     // кільця пропускні
     [22, 32, 42, 52, 60].forEach(dx => P(g, '#c8ccd0', bx + dx, py - 1, 1, 1));
   } else {
@@ -590,6 +636,7 @@ function buildRod(kind) {
 }
 const ROD_SPIN = buildRod('spin');
 const ROD_FLOAT = buildRod('float');
+const ROD_FEEDER = buildRod('feeder');
 
 /* ================================================================
    ЗВУК (WebAudio, без файлів)
@@ -665,9 +712,10 @@ function curRod() { return RODS[S.rodIdx || 0]; }
 function curLine() { return LINES[S.lineIdx || 0]; }
 
 const S = {
-  scr: 'title',        // title | pick | tackle | game
-  mode: null,          // 'spin' | 'float'
+  scr: 'title',        // title | pick | tackle | gear | floats | online | game
+  mode: null,          // 'spin' | 'float' | 'feeder'
   tIdx: 0,             // вибрана силіконка / наживка
+  tIdxSpin: 0, tIdxBait: 0,
   rodIdx: 0, lineIdx: 0,
   money: 0,
   inv: {},
@@ -675,10 +723,17 @@ const S = {
   unlockedBaits: ['maggot', 'worm', 'corn', 'dough'],
   unlockedRods: ['rod0'],
   unlockedLines: ['line0'],
-  shopPage: 0,
+  unlockedModes: ['float', 'spin'],
+  unlockedFloats: ['f0'],
+  floatId: 'f0',
+  floatCustom: null,
+  shopPage: 0, shopTab: 0, shopPage2: 0, tradePage: 0,
   sound: true,
   paused: false,
-  invOpen: false
+  invOpen: false,
+  shopOpen: false,
+  tradeOpen: false,
+  floatEditOpen: false
 };
 try {
   const sv = JSON.parse(localStorage.getItem('pixfish_v1') || '{}');
@@ -695,33 +750,78 @@ try {
   if (sv.unlockedBaits) S.unlockedBaits = sv.unlockedBaits;
   if (sv.unlockedRods) S.unlockedRods = sv.unlockedRods;
   if (sv.unlockedLines) S.unlockedLines = sv.unlockedLines;
+  if (sv.unlockedModes) S.unlockedModes = sv.unlockedModes;
+  if (sv.unlockedFloats) S.unlockedFloats = sv.unlockedFloats;
+  if (sv.floatId) S.floatId = sv.floatId;
+  if (sv.floatCustom) S.floatCustom = sv.floatCustom;
   if (typeof sv.rodIdx === 'number') S.rodIdx = sv.rodIdx;
   if (typeof sv.lineIdx === 'number') S.lineIdx = sv.lineIdx;
+  if (typeof sv.tIdxSpin === 'number') S.tIdxSpin = sv.tIdxSpin;
+  if (typeof sv.tIdxBait === 'number') S.tIdxBait = sv.tIdxBait;
 } catch (e) {}
+rebuildFloat();
 function save() {
   try {
     localStorage.setItem('pixfish_v1', JSON.stringify({
       money: S.money, inv: S.inv,
       unlockedLures: S.unlockedLures, unlockedBaits: S.unlockedBaits,
       unlockedRods: S.unlockedRods, unlockedLines: S.unlockedLines,
+      unlockedModes: S.unlockedModes, unlockedFloats: S.unlockedFloats,
+      floatId: S.floatId, floatCustom: S.floatCustom,
+      tIdxSpin: S.tIdxSpin, tIdxBait: S.tIdxBait,
       rodIdx: S.rodIdx, lineIdx: S.lineIdx
     }));
   } catch (e) {}
 }
 
+/* ---------------- 3 ВУДКИ, СКЛАД РИБИ, МАГАЗИН/ОБМІН ---------------- */
+const MODES = [
+  { id: 'float',  name: 'ПОПЛАВОЧНА', btn: 'ПОПЛ',  free: true, hint: 'КЛЬОВ ЗА 2-4 ХВ' },
+  { id: 'feeder', name: 'ФІДЕР',      btn: 'ФІДЕР', price: 300, hint: 'ДНО. ВЕЛИКА РИБА' },
+  { id: 'spin',   name: 'СПІНІНГ',    btn: 'СПІН',  free: true, hint: 'ЯК І БУЛО' }
+];
+const MAX_FISH = 50;
+function invTotal() { let t = 0; for (const k in S.inv) t += (S.inv[k] && S.inv[k].n) || 0; return t; }
+function selectMode(id, silent) {
+  const m = MODES.find(x => x.id === id);
+  if (!m) return;
+  if (!isUnlocked('unlockedModes', id)) {
+    if (!tryBuy('unlockedModes', id, m.price)) return;
+    setMsgGlobal(m.name + ' КУПЛЕНО!', '#7be08a');
+  }
+  if (S.mode === id) { if (!silent) setMsgGlobal('ВУДКА ВЖЕ АКТИВНА: ' + m.name, '#8aa8b0'); return; }
+  resetFishing();
+  S.mode = id;
+  S.tIdx = id === 'spin' ? (S.tIdxSpin || 0) : (S.tIdxBait || 0);
+  if (!silent) setMsg('ВУДКА: ' + m.name + (id === 'spin' ? '' : ' - КЛЬОВ ЗА 2-4 ХВ'), '#ffd54a', 2.2);
+  SND.ui();
+}
+function openShop() { S.shopOpen = true; S.shopTab = S.shopTab || 0; S.shopPage2 = 0; SND.ui(); }
+function openTrade() {
+  if (!(NET.conn && NET.conn.open)) { setMsgGlobal('ОБМІН - ТІЛЬКИ В ОНЛАЙНІ З ДРУГОМ', '#ffb050'); if (SND.snap) SND.snap(); return; }
+  S.tradeOpen = true; S.tradePage = 0; NET.listSent = true;
+  compSend({ t: 'lureList', ids: S.unlockedLures.slice() });
+  SND.ui();
+}
+
 /* ================================================================
    ОНЛАЙН П2П (PeerJS) + РЕЖИМ ЗМАГАНЬ "ЩУКОЛОВ"
    ================================================================ */
-const NET = { peer: null, conn: null, role: null, roomId: '', status: 'idle', err: '' };
+const NET = { peer: null, conn: null, role: null, roomId: '', status: 'idle', err: '', oppLures: null };
 function randRoom() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let s = '';
   for (let i = 0; i < 5; i++) s += chars[Math.floor(Math.random() * chars.length)];
   return s;
 }
-function netHost() {
+const TRANSLIT = { 'А':'A','Б':'B','В':'V','Г':'H','Ґ':'G','Д':'D','Е':'E','Є':'YE','Ж':'ZH','З':'Z','И':'Y','І':'I','Ї':'YI','Й':'Y','К':'K','Л':'L','М':'M','Н':'N','О':'O','П':'P','Р':'R','С':'S','Т':'T','У':'U','Ф':'F','Х':'KH','Ц':'TS','Ч':'CH','Ш':'SH','Щ':'SHCH','Ь':'','Ю':'YU','Я':'YA','Ы':'Y','Э':'E','Ё':'YO','Ъ':'' };
+function normalizeRoom(s) {
+  s = String(s || '').toUpperCase().replace(/./g, ch => TRANSLIT[ch] !== undefined ? TRANSLIT[ch] : ch).replace(/[^A-Z0-9]/g, '');
+  return (s.length >= 3 && s.length <= 12) ? s : '';
+}
+function netHost(custom) {
   if (typeof Peer === 'undefined') { NET.status = 'error'; NET.err = 'НЕМАЄ З’ЄДНАННЯ З ІНТЕРНЕТОМ'; return; }
-  NET.role = 'host'; NET.status = 'connecting'; NET.roomId = randRoom();
+  NET.role = 'host'; NET.status = 'connecting'; NET.roomId = normalizeRoom(custom) || randRoom();
   try {
     NET.peer = new Peer('pixfish-' + NET.roomId, { debug: 0 });
     NET.peer.on('open', () => { NET.status = 'waiting'; });
@@ -731,7 +831,7 @@ function netHost() {
       c.on('data', netOnData);
       c.on('close', netOnClose);
     });
-    NET.peer.on('error', e => { NET.status = 'error'; NET.err = 'ПОМИЛКА З’ЄДНАННЯ'; });
+    NET.peer.on('error', e => { NET.status = 'error'; NET.err = (e && e.type === 'unavailable-id') ? 'КОД ВЖЕ ЗАЙНЯТИЙ - СПРОБУЙ ІНШИЙ' : 'ПОМИЛКА З’ЄДНАННЯ'; });
   } catch (e) { NET.status = 'error'; NET.err = 'ПОМИЛКА'; }
 }
 function netJoin(code) {
@@ -757,50 +857,68 @@ function netOnData(d) {
   if (!d || !d.t) return;
   if (d.t === 'startComp') {
     S.comp = { active: true, t: d.dur, target: 'pike', myScore: 0, oppScore: 0, finished: false };
-    S.mode = 'spin'; startGame();
+    S.mode = 'spin'; S.tIdx = S.tIdxSpin || 0; startGame();
   } else if (d.t === 'score') {
     if (S.comp) S.comp.oppScore = d.n;
+  } else if (d.t === 'gift') {
+    // друг надіслав силіконку (обмін онлайн)
+    const l = lureById(d.id);
+    if (!S.unlockedLures.includes(d.id)) { S.unlockedLures.push(d.id); save(); }
+    setMsgGlobal('ДРУГ НАДІСЛАВ: ' + l.n1 + ' ' + l.n2, '#7be08a');
+    SND.sell();
+  } else if (d.t === 'lureList') {
+    NET.oppLures = Array.isArray(d.ids) ? d.ids : [];
+    if (!NET.listSent) { NET.listSent = true; compSend({ t: 'lureList', ids: S.unlockedLures.slice() }); }
   }
 }
 function compSend(msg) { if (NET.conn && NET.conn.open) { try { NET.conn.send(msg); } catch (e) {} } }
 function netDisconnect() {
   try { if (NET.conn) NET.conn.close(); } catch (e) {}
   try { if (NET.peer) NET.peer.destroy(); } catch (e) {}
-  NET.peer = null; NET.conn = null; NET.role = null; NET.status = 'idle'; NET.err = '';
+  NET.peer = null; NET.conn = null; NET.role = null; NET.status = 'idle'; NET.err = ''; NET.listSent = false; NET.oppLures = null;
 }
 function netStartComp() {
   const dur = 180;
   S.comp = { active: true, t: dur, target: 'pike', myScore: 0, oppScore: 0, finished: false };
   compSend({ t: 'startComp', dur });
-  S.mode = 'spin'; startGame();
+  S.mode = 'spin'; S.tIdx = S.tIdxSpin || 0; startGame();
 }
-let _joinInput = '';
 function drawOnline(now) {
   panel(0, 0, VW, 34);
-  drawText('ОНЛАЙН П2П — ЩУКОЛОВ', 160, 12, 2, '#ffd54a', 'center');
+  drawText('ОНЛАЙН П2П', 160, 12, 2, '#ffd54a', 'center');
   if (NET.status === 'idle') {
-    drawText('ЗМАГАННЯ 1 НА 1: ХТО ЗЛОВИТЬ', 160, 46, 1, '#c8d8dc', 'center');
-    drawText('БІЛЬШЕ ЩУК ЗА 3 ХВИЛИНИ', 160, 56, 1, '#c8d8dc', 'center');
-    btn(90, 78, 140, 22, 'СТВОРИТИ КІМНАТУ', () => { netHost(); SND.ui(); }, 1);
-    btn(90, 106, 140, 22, 'ПРИЄДНАТИСЬ', () => {
-      const code = prompt('ВВЕДИ КОД КІМНАТИ (5 символів):', '');
+    drawText('ЗМАГАННЯ 1 НА 1: ХТО ЗЛОВИТЬ', 160, 42, 1, '#c8d8dc', 'center');
+    drawText('БІЛЬШЕ ЩУК ЗА 3 ХВИЛИНИ', 160, 52, 1, '#c8d8dc', 'center');
+    btn(60, 66, 200, 18, 'ГЕНЕРУВАТИ КОД КІМНАТИ', () => { netHost(null); SND.ui(); }, 1);
+    btn(60, 88, 200, 18, 'ВЛАСНИЙ КОД (ВВЕСТИ)', () => {
+      const code = prompt('ВВЕДИ ВЛАСНИЙ КОД (3-12 ЛІТЕР/ЦИФР):', '');
+      if (code && code.trim()) { netHost(code); SND.ui(); }
+    }, 1);
+    btn(60, 110, 200, 18, 'ПРИЄДНАТИСЬ ЗА КОДОМ', () => {
+      const code = prompt('ВВЕДИ КОД КІМНАТИ ДРУГА:', '');
       if (code) { netJoin(code); SND.ui(); }
     }, 1);
+    drawText('ВЛАСНИЙ КОД МОЖЕ БУТИ БУДЬ-ЯКИМ: МИНАРІКА1', 160, 138, 1, '#6a8a94', 'center');
+    drawText('У ГРІ ЗЛІВА: МАГАЗИН (КУПИТИ) І ОБМІН', 160, 150, 1, '#6a8a94', 'center');
   } else if (NET.status === 'connecting') {
     drawText('З’ЄДНАННЯ...', 160, 90, 1, '#e8f0f0', 'center');
   } else if (NET.status === 'waiting') {
-    drawText('КІМНАТА СТВОРЕНА. ДАЙ КОД ДРУГУ:', 160, 70, 1, '#c8d8dc', 'center');
-    drawText(NET.roomId, 160, 92, 4, '#ffd54a', 'center');
-    drawText('ОЧІКУВАННЯ ГРАВЦЯ...', 160, 130, 1, '#8aa8b0', 'center');
+    drawText('КІМНАТА СТВОРЕНА. ДАЙ КОД ДРУГУ:', 160, 58, 1, '#c8d8dc', 'center');
+    drawText(NET.roomId, 160, 80, 4, '#ffd54a', 'center');
+    drawText('ОЧІКУВАННЯ ГРАВЦЯ...', 160, 120, 1, '#8aa8b0', 'center');
+    btn(90, 136, 140, 16, 'СКАСУВАТИ', () => { netDisconnect(); SND.ui(); }, 1);
   } else if (NET.status === 'connected') {
-    drawText('ГРАВЕЦЬ ПІДКЛЮЧЕНИЙ!', 160, 60, 1, '#6ac86a', 'center');
+    drawText('ГРАВЕЦЬ ПІДКЛЮЧЕНИЙ!', 160, 50, 1, '#6ac86a', 'center');
     if (NET.role === 'host') {
-      btn(90, 86, 140, 24, 'СТАРТ ЗМАГАННЯ', () => { netStartComp(); SND.ui(); }, 1);
+      btn(90, 64, 140, 22, 'СТАРТ ЗМАГАННЯ', () => { netStartComp(); SND.ui(); }, 1);
     } else {
-      drawText('ОЧІКУЄМО СТАРТ ВІД ХОСТА...', 160, 100, 1, '#8aa8b0', 'center');
+      drawText('ОЧІКУЄМО СТАРТ ВІД ХОСТА...', 160, 70, 1, '#8aa8b0', 'center');
     }
+    drawText('У ДРУГА СИЛІКОНОК: ' + (NET.oppLures ? NET.oppLures.length : '?'), 160, 96, 1, '#8aa8b0', 'center');
+    btn(90, 108, 140, 20, 'ОБМІН СИЛІКОНКАМИ', () => { openTrade(); }, 1);
   } else if (NET.status === 'error') {
     drawText(NET.err || 'ПОМИЛКА', 160, 90, 1, '#ff5a4a', 'center');
+    btn(110, 106, 100, 16, 'ЩЕ РАЗ', () => { netDisconnect(); SND.ui(); }, 1);
   }
   btn(122, 206, 76, 18, 'НАЗАД', () => { netDisconnect(); S.scr = 'title'; SND.ui(); }, 1);
 }
@@ -809,16 +927,16 @@ const pt = { x: -99, y: -99 };
 let mouseHeld = false;
 let clicks = [];   // оновлюється щокадру під час рендеру
 
-function btn(x, y, w, h, label, fn, sc, dis) {
+function btn(x, y, w, h, label, fn, sc, dis, sel) {
   sc = sc || 1;
   const hov = !dis && pt.x >= x && pt.x < x + w && pt.y >= y && pt.y < y + h;
-  ctx.fillStyle = dis ? '#122830' : hov ? '#e8a23a' : '#1b3a46';
+  ctx.fillStyle = dis ? '#122830' : hov ? '#e8a23a' : sel ? '#1d4a2c' : '#1b3a46';
   ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = dis ? '#1a303a' : hov ? '#f8c870' : '#2c5a6a';
+  ctx.fillStyle = dis ? '#1a303a' : hov ? '#f8c870' : sel ? '#3f8a50' : '#2c5a6a';
   ctx.fillRect(x, y, w, 2); ctx.fillRect(x, y, 2, h);
-  ctx.fillStyle = dis ? '#0a161c' : hov ? '#a86a20' : '#0e222a';
+  ctx.fillStyle = dis ? '#0a161c' : hov ? '#a86a20' : sel ? '#123322' : '#0e222a';
   ctx.fillRect(x, y + h - 2, w, 2); ctx.fillRect(x + w - 2, y, 2, h);
-  drawText(label, x + w / 2, y + (h - 7 * sc) / 2, sc, dis ? '#3a525c' : (hov ? '#1a1206' : '#e8f0f0'), 'center');
+  drawText(label, x + w / 2, y + (h - 7 * sc) / 2, sc, dis ? '#3a525c' : (hov ? '#1a1206' : sel ? '#9ae8a0' : '#e8f0f0'), 'center');
   if (!dis) clicks.push({ x, y, w, h, fn });
 }
 
@@ -853,59 +971,75 @@ function drawTitle(now) {
   ctx.save();
   ctx.translate(40, 112 + bob);
   ctx.rotate(Math.sin(now / 700) * 0.15);
-  ctx.drawImage(FLOAT_SPR.frames[0], -7, -8, 14, 34);
+  ctx.drawImage(curFloatSpr().frames[0], -7, -8, 14, 34);
   ctx.restore();
   // силіконка справа
   blit(LURES[1].spr.frames[(now / 160 | 0) % 2], 280, 114 + bob, 3, false);
 
   btn(110, 104, 100, 26, 'ГРАТИ', () => { S.scr = 'pick'; SND.ui(); }, 2);
   btn(110, 196, 100, 16, 'ОНЛАЙН П2П', () => { S.scr = 'online'; SND.ui(); }, 1);
-  panel(40, 142, 240, 48);
-  drawText('СПІНІНГ: ОБЕРИ СИЛІКОНКУ, ТРИМАЙ ЛКМ', 160, 148, 1, '#c8d8dc', 'center');
-  drawText('ПРОВОДКА + ПАУЗИ. ПОПЛАВОЧКА: НАЖИВКА', 160, 158, 1, '#c8d8dc', 'center');
-  drawText('І ЧЕКАЙ ПОКЛЬОВКУ, ПІДСІЧКА КЛАЦОМ', 160, 168, 1, '#c8d8dc', 'center');
-  drawText('ВАЖЧА РИБА - БІЛЬШЕ ГРОШЕЙ', 160, 182, 1, '#6a8a94', 'center');
+  panel(24, 142, 272, 48);
+  drawText('3 ВУДКИ: ПОПЛ / ФІДЕР / СПІН - КНОПКИ ЗНИЗУ', 160, 147, 1, '#c8d8dc', 'center');
+  drawText('НА ПК: ЦИФРИ 1-3. ЗЛІВА: МАГАЗИН ОБМІН СКЛАД', 160, 157, 1, '#c8d8dc', 'center');
+  drawText('ПОПЛАВОЧКА І ФІДЕР: КЛЬОВ ЗА 2-4 ХВ', 160, 167, 1, '#c8d8dc', 'center');
+  drawText('ОНЛАЙН: ОБМІН СИЛІКОНОК. ВАЖЧА - ДОРОЖЧЕ', 160, 181, 1, '#6a8a94', 'center');
   drawText('ГРОШІ: $' + S.money, 4, 4, 1, '#ffd54a');
 }
 
-/* ---------------- ЕКРАН: ВИБІР СПОСОБУ ---------------- */
+/* ---------------- ЕКРАН: ВИБІР ВУДКИ (3 шт) ---------------- */
 function drawPick(now) {
   panel(0, 0, VW, 34);
-  drawText('ОБЕРІТЬ СПОСІБ ЛОВЛІ', 160, 12, 2, '#ffd54a', 'center');
-  // --- картка СПІНІНГ ---
-  const c1 = { x: 12, y: 46, w: 142, h: 122 };
-  const c2 = { x: 166, y: 46, w: 142, h: 122 };
-  const hov1 = pt.x >= c1.x && pt.x < c1.x + c1.w && pt.y >= c1.y && pt.y < c1.y + c1.h;
-  const hov2 = pt.x >= c2.x && pt.x < c2.x + c2.w && pt.y >= c2.y && pt.y < c2.y + c2.h;
-  panel(c1.x, c1.y, c1.w, c1.h);
-  if (hov1) { ctx.fillStyle = 'rgba(255,213,74,0.12)'; ctx.fillRect(c1.x + 1, c1.y + 1, c1.w - 2, c1.h - 2); }
-  ctx.save();
-  ctx.translate(c1.x + 44, c1.y + 58);
-  ctx.rotate(-0.5);
-  ctx.drawImage(ROD_SPIN.img, -2, -7, ROD_SPIN.img.width * 1.25, ROD_SPIN.img.height * 1.25);
-  ctx.restore();
-  blit(LURES[0].spr.frames[(now / 150 | 0) % 2], c1.x + 112, c1.y + 70, 2, false);
-  drawText('СПІНІНГ', c1.x + 71, c1.y + 78, 2, hov1 ? '#ffd54a' : '#e8f0f0', 'center');
-  drawText('СИЛІКОНКИ, ПРОВОДКИ,', c1.x + 71, c1.y + 96, 1, '#a8c0c8', 'center');
-  drawText('ХИЖАК АТАКУЄ НА ХОДІ', c1.x + 71, c1.y + 106, 1, '#a8c0c8', 'center');
-  clicks.push({ x: c1.x, y: c1.y, w: c1.w, h: c1.h, fn: () => { S.mode = 'spin'; S.scr = 'tackle'; SND.ui(); } });
-
-  panel(c2.x, c2.y, c2.w, c2.h);
-  if (hov2) { ctx.fillStyle = 'rgba(255,213,74,0.12)'; ctx.fillRect(c2.x + 1, c2.y + 1, c2.w - 2, c2.h - 2); }
-  ctx.save();
-  ctx.translate(c2.x + 40, c2.y + 58);
-  ctx.rotate(-0.5);
-  ctx.drawImage(ROD_FLOAT.img, -2, -7, ROD_FLOAT.img.width * 1.15, ROD_FLOAT.img.height * 1.15);
-  ctx.restore();
-  const fb = Math.sin(now / 400) * 2;
-  blit(FLOAT_SPR.frames[0], c2.x + 118, c2.y + 54 + fb, 2, false);
-  drawText('ПОПЛАВОЧНА', c2.x + 71, c2.y + 78, 2, hov2 ? '#ffd54a' : '#e8f0f0', 'center');
-  drawText('НАСАЖУЙ ОПАРИША АБО', c2.x + 71, c2.y + 96, 1, '#a8c0c8', 'center');
-  drawText('КУКУРУДЗУ АБО ТІСТО', c2.x + 71, c2.y + 106, 1, '#a8c0c8', 'center');
-  clicks.push({ x: c2.x, y: c2.y, w: c2.w, h: c2.h, fn: () => { S.mode = 'float'; S.scr = 'tackle'; SND.ui(); } });
-
-  btn(122, 182, 76, 18, 'НАЗАД', () => { S.scr = 'title'; SND.ui(); }, 1);
-  btn(12, 212, 100, 16, 'ЗНАРЯДДЯ', () => { S.scr = 'gear'; SND.ui(); }, 1);
+  drawText('ОБЕРІТЬ ВУДКУ', 160, 12, 2, '#ffd54a', 'center');
+  const cards = [
+    { mode: 'spin',   name: 'СПІНІНГ',    rod: ROD_SPIN,   sc: 0.9, x: 8,
+      h1: 'СИЛІКОНКИ, ХИЖАК', h2: 'АТАКУЄ ОДРАЗУ' },
+    { mode: 'float',  name: 'ПОПЛАВОЧНА', rod: ROD_FLOAT,  sc: 0.8, x: 111,
+      h1: 'НАЖИВКА. КЛЬОВ', h2: 'ЗА 2-4 ХВИЛИНИ' },
+    { mode: 'feeder', name: 'ФІДЕР',      rod: ROD_FEEDER, sc: 0.9, x: 214,
+      h1: 'ГОДІВНИЦЯ, ДНО.', h2: 'КЛЬОВ ЗА 2-4 ХВ' }
+  ];
+  cards.forEach(c => {
+    const w = 98, y = 42, h = 126;
+    const owned = MODES.find(m => m.id === c.mode).free || isUnlocked('unlockedModes', c.mode);
+    const hov = pt.x >= c.x && pt.x < c.x + w && pt.y >= y && pt.y < y + h;
+    panel(c.x, y, w, h);
+    if (hov && owned) { ctx.fillStyle = 'rgba(255,213,74,0.12)'; ctx.fillRect(c.x + 1, y + 1, w - 2, h - 2); }
+    if (!owned) { ctx.fillStyle = 'rgba(4,8,10,0.45)'; ctx.fillRect(c.x + 1, y + 1, w - 2, h - 2); }
+    ctx.save();
+    ctx.translate(c.x + 30, y + 38);
+    ctx.rotate(-0.5);
+    ctx.drawImage(c.rod.img, -2, -7, c.rod.img.width * c.sc, c.rod.img.height * c.sc);
+    ctx.restore();
+    if (c.mode === 'float') {
+      const fb = Math.sin(now / 400) * 2;
+      blit(curFloatSpr().frames[0], c.x + 74, y + 38 + fb, 1.5, false);
+    } else if (c.mode === 'feeder') {
+      blit(FEEDER_SPR.frames[0], c.x + 74, y + 42, 2, false);
+    } else {
+      blit(LURES[0].spr.frames[(now / 150 | 0) % 2], c.x + 74, y + 38, 2, false);
+    }
+    drawText(c.name, c.x + w / 2, y + 66, 1.5, hov && owned ? '#ffd54a' : '#e8f0f0', 'center');
+    drawText(c.h1, c.x + w / 2, y + 86, 1, '#a8c0c8', 'center');
+    drawText(c.h2, c.x + w / 2, y + 96, 1, '#a8c0c8', 'center');
+    if (!owned) drawText('КУПИТИ $300', c.x + w / 2, y + 112, 1, '#ffd54a', 'center');
+    clicks.push({ x: c.x, y, w, h, fn: () => {
+      if (!owned) {
+        if (tryBuy('unlockedModes', c.mode, 300)) {
+          S.mode = c.mode;
+          S.tIdx = c.mode === 'spin' ? (S.tIdxSpin || 0) : (S.tIdxBait || 0);
+          S.scr = 'tackle';
+        }
+        return;
+      }
+      S.mode = c.mode;
+      S.tIdx = c.mode === 'spin' ? (S.tIdxSpin || 0) : (S.tIdxBait || 0);
+      S.scr = 'tackle'; SND.ui();
+    } });
+  });
+  btn(122, 178, 76, 18, 'НАЗАД', () => { S.scr = 'title'; SND.ui(); }, 1);
+  btn(8, 212, 94, 16, 'ЗНАРЯДДЯ', () => { S.scr = 'gear'; SND.ui(); }, 1);
+  btn(112, 212, 94, 16, 'ПОПЛАВКИ', () => { S.scr = 'floats'; SND.ui(); }, 1);
+  btn(216, 212, 96, 16, 'ОНЛАЙН П2П', () => { S.scr = 'online'; SND.ui(); }, 1);
   drawText('ГРОШІ: $' + S.money, 4, 4, 1, '#ffd54a');
 }
 
@@ -921,7 +1055,7 @@ function setMsgGlobal(text, col) { _globalMsg = { text, col, t: 1.6 }; }
 /* ---------------- ЕКРАН: ВИБІР ОСНАСТКИ (магазин) ---------------- */
 function drawTackle(now) {
   panel(0, 0, VW, 34);
-  const title = S.mode === 'spin' ? 'СИЛІКОНКИ' : 'НАЖИВКИ';
+  const title = S.mode === 'spin' ? 'СИЛІКОНКИ' : (S.mode === 'feeder' ? 'НАЖИВКИ (ФІДЕР)' : 'НАЖИВКИ');
   drawText(title, 160, 12, 2, '#ffd54a', 'center');
   const items = S.mode === 'spin' ? LURES : BAITS;
   const lockKey = S.mode === 'spin' ? 'unlockedLures' : 'unlockedBaits';
@@ -956,8 +1090,9 @@ function drawTackle(now) {
     }
     clicks.push({
       x, y, w, h, fn: () => {
-        if (owned) { S.tIdx = i; startGame(); SND.ui(); }
-        else if (tryBuy(lockKey, it.id, it.price)) { S.tIdx = i; startGame(); }
+        const setIdx = () => { S.tIdx = i; if (S.mode === 'spin') S.tIdxSpin = i; else S.tIdxBait = i; };
+        if (owned) { setIdx(); startGame(); SND.ui(); }
+        else if (tryBuy(lockKey, it.id, it.price)) { setIdx(); startGame(); }
       }
     });
   });
@@ -1000,20 +1135,253 @@ function drawGear(now) {
     else drawText(sel ? 'ОК' : 'ВЗЯТИ', x + 3, y + 30, 1, sel ? '#6ac86a' : '#8aa8b0');
     clicks.push({ x, y, w, h, fn: () => { if (owned) { S.lineIdx = i; save(); SND.ui(); } else if (tryBuy('unlockedLines', l.id, l.price)) { S.lineIdx = i; save(); } } });
   });
+  btn(8, 216, 62, 18, 'ПОПЛАВКИ', () => { S.scr = 'floats'; SND.ui(); }, 1);
   btn(122, 216, 76, 18, 'НАЗАД', () => { S.scr = 'pick'; SND.ui(); }, 1);
+  btn(250, 216, 62, 18, 'МАГАЗИН', () => { openShop(); }, 1);
   drawText('ГРОШІ: $' + S.money, 4, 4, 1, '#ffd54a');
   if (_globalMsg) { drawText(_globalMsg.text, 160, 206, 1, _globalMsg.col, 'center'); }
 }
 
-/* ---------------- ОВЕРЛЕЙ: ІНВЕНТАР ---------------- */
+/* ---------------- ЕКРАН: ПОПЛАВКИ (пресети + кастом) ---------------- */
+function drawFloats(now) {
+  panel(0, 0, VW, 34);
+  drawText('ПОПЛАВКИ', 160, 12, 2, '#ffd54a', 'center');
+  const rowH = 18, y0 = 40;
+  FLOATS.forEach((f, i) => {
+    const y = y0 + i * rowH;
+    const owned = f.free || isUnlocked('unlockedFloats', f.id);
+    const sel = S.floatId === f.id;
+    const hov = pt.x >= 8 && pt.x < 312 && pt.y >= y && pt.y < y + rowH;
+    panel(8, y, 304, rowH);
+    if (sel) { ctx.fillStyle = 'rgba(106,200,106,0.18)'; ctx.fillRect(9, y + 1, 302, rowH - 2); }
+    else if (hov && owned) { ctx.fillStyle = 'rgba(255,213,74,0.10)'; ctx.fillRect(9, y + 1, 302, rowH - 2); }
+    ctx.drawImage(f.spr.frames[0], 18, y + 1);
+    drawText(f.name, 34, y + 5, 1, owned ? '#e8f0f0' : '#7a8a90');
+    if (!owned) drawText('$' + f.price + ' - КУПИТИ', 308, y + 5, 1, '#ffd54a', 'right');
+    else drawText(sel ? 'ОБРАНО' : 'ОБРАТИ', 308, y + 5, 1, sel ? '#6ac86a' : '#8aa8b0', 'right');
+    clicks.push({ x: 8, y, w: 304, h: rowH, fn: () => {
+      if (owned) { S.floatId = f.id; rebuildFloat(); save(); SND.ui(); }
+      else if (tryBuy('unlockedFloats', f.id, f.price)) { S.floatId = f.id; rebuildFloat(); save(); }
+    } });
+  });
+  // свій колір (кастомний поплавок)
+  const yc = y0 + FLOATS.length * rowH;
+  const ownedC = isUnlocked('unlockedFloats', 'custom');
+  const selC = S.floatId === 'custom';
+  panel(8, yc, 304, rowH + 2);
+  if (selC) { ctx.fillStyle = 'rgba(106,200,106,0.18)'; ctx.fillRect(9, yc + 1, 302, rowH); }
+  ctx.drawImage(customFloatSpr().frames[0], 18, yc + 2);
+  drawText('СВІЙ КОЛІР (КАСТОМНИЙ)', 34, yc + 5, 1, ownedC ? '#e8f0f0' : '#7a8a90');
+  if (!ownedC) drawText('$150 - КУПИТИ', 308, yc + 5, 1, '#ffd54a', 'right');
+  else drawText(selC ? 'РЕДАГУВАТИ' : 'ОБРАТИ', 308, yc + 5, 1, selC ? '#ffd54a' : '#8aa8b0', 'right');
+  clicks.push({ x: 8, y: yc, w: 304, h: rowH + 2, fn: () => {
+    if (ownedC) { S.floatId = 'custom'; rebuildFloat(); save(); S.floatEditOpen = true; SND.ui(); }
+    else if (tryBuy('unlockedFloats', 'custom', 150)) { S.floatId = 'custom'; rebuildFloat(); save(); S.floatEditOpen = true; }
+  } });
+  btn(122, 216, 76, 18, 'НАЗАД', () => { S.scr = 'pick'; SND.ui(); }, 1);
+  drawText('ГРОШІ: $' + S.money, 4, 4, 1, '#ffd54a');
+  if (_globalMsg) drawText(_globalMsg.text, 160, 208, 1, _globalMsg.col, 'center');
+}
+
+/* ---------------- ОВЕРЛЕЙ: РЕДАКТОР СВОГО ПОПЛАВКА ---------------- */
+const EDIT_COLS = ['#e03030', '#e8a23a', '#e8d83a', '#3ac86a', '#2a8ad8', '#8a4ad8', '#e05a9a', '#f0f0e8', '#1a1d22'];
+const EDIT_ROWS = [['tip', 'ВЕРШИНКА'], ['ant', 'АНТЕНА'], ['top', 'ВЕРХ ТІЛА'], ['bot', 'НИЗ ТІЛА']];
+function drawFloatEdit() {
+  ctx.fillStyle = 'rgba(4,12,18,0.72)'; ctx.fillRect(0, 0, VW, VH);
+  clicks.push({ x: 0, y: 0, w: VW, h: VH, fn: () => {} });
+  panel(30, 16, 260, 208);
+  drawText('СВІЙ ПОПЛАВОК', 160, 24, 2, '#ffd54a', 'center');
+  if (!S.floatCustom) S.floatCustom = { tip: '#e03030', ant: '#e8e4d8', top: '#d23430', bot: '#f0ece0' };
+  const pv = customFloatSpr();
+  ctx.save();
+  ctx.translate(58, 108);
+  ctx.rotate(Math.sin(performance.now() / 600) * 0.12);
+  ctx.drawImage(pv.frames[0], -7, -17, 14, 34);
+  ctx.restore();
+  EDIT_ROWS.forEach((r, i) => {
+    const y = 52 + i * 30;
+    drawText(r[1], 88, y + 4, 1, '#c8d8dc');
+    EDIT_COLS.forEach((col, j) => {
+      const x = 108 + j * 17;
+      ctx.fillStyle = col; ctx.fillRect(x, y, 14, 14);
+      ctx.fillStyle = '#0a1216';
+      ctx.fillRect(x, y, 14, 1); ctx.fillRect(x, y + 13, 14, 1);
+      ctx.fillRect(x, y, 1, 14); ctx.fillRect(x + 13, y, 1, 14);
+      if (S.floatCustom[r[0]] === col) {
+        ctx.fillStyle = '#ffd54a';
+        ctx.fillRect(x - 1, y - 1, 16, 1); ctx.fillRect(x - 1, y + 14, 16, 1);
+        ctx.fillRect(x - 1, y, 1, 16); ctx.fillRect(x + 14, y, 1, 16);
+      }
+      clicks.push({ x, y, w: 14, h: 14, fn: () => {
+        S.floatCustom[r[0]] = col;
+        rebuildCustomFloat();
+        if (S.floatId === 'custom') rebuildFloat();
+        save(); SND.ui();
+      } });
+    });
+  });
+  btn(48, 178, 100, 20, 'ВИПАДКОВИЙ', () => {
+    const pk = () => EDIT_COLS[Math.random() * EDIT_COLS.length | 0];
+    S.floatCustom = { tip: pk(), ant: pk(), top: pk(), bot: pk() };
+    rebuildCustomFloat();
+    if (S.floatId === 'custom') rebuildFloat();
+    save(); SND.ui();
+  }, 1);
+  btn(162, 178, 100, 20, 'ГОТОВО', () => { S.floatEditOpen = false; SND.ui(); }, 1);
+}
+
+/* ---------------- ОВЕРЛЕЙ: МАГАЗИН (купити силіконки, вудки, ліска, поплавки) ---------------- */
+const SHOP_TABS = ['СИЛІК', 'ВУДКИ', 'ЛІСКА', 'ПОПЛАВ'];
+function drawShop() {
+  ctx.fillStyle = 'rgba(4,12,18,0.72)'; ctx.fillRect(0, 0, VW, VH);
+  clicks.push({ x: 0, y: 0, w: VW, h: VH, fn: () => {} });
+  panel(6, 10, 308, 220);
+  drawText('МАГАЗИН', 14, 16, 2, '#ffd54a');
+  drawText('$' + S.money, 306, 20, 1, '#ffd54a', 'right');
+  SHOP_TABS.forEach((t, i) => {
+    btn(14 + i * 74, 32, 70, 14, t, () => { S.shopTab = i; S.shopPage2 = 0; SND.ui(); }, 1, false, (S.shopTab || 0) === i);
+  });
+  const rows = [];
+  const tab = S.shopTab || 0;
+  if (tab === 0) {
+    LURES.forEach((l, i) => rows.push({
+      name: l.n1 + ' ' + l.n2,
+      hint: l.hint + (S.mode === 'spin' ? '' : ' (ЛИШЕ СПІНІНГ)'),
+      right: (l.free || isUnlocked('unlockedLures', l.id)) ? (S.mode === 'spin' && (S.tIdxSpin || 0) === i ? 'ОБРАНО' : 'Є') : '$' + l.price,
+      dim: !(l.free || isUnlocked('unlockedLures', l.id)),
+      fn: () => {
+        if (l.free || isUnlocked('unlockedLures', l.id)) {
+          if (S.mode === 'spin') { S.tIdx = i; S.tIdxSpin = i; setMsgGlobal('ОБРАНО: ' + l.n1 + ' ' + l.n2, '#7be08a'); SND.ui(); }
+          else setMsgGlobal('СИЛІКОНКИ - ДЛЯ СПІНІНГА', '#8aa8b0');
+        } else if (tryBuy('unlockedLures', l.id, l.price)) {
+          if (S.mode === 'spin') { S.tIdx = i; S.tIdxSpin = i; }
+          setMsgGlobal('КУПЛЕНО: ' + l.n1 + ' ' + l.n2, '#7be08a');
+        }
+      }
+    }));
+  } else if (tab === 1) {
+    const fed = isUnlocked('unlockedModes', 'feeder');
+    rows.push({
+      name: 'ФІДЕРНА ВУДКА (3-Я ВУДКА)', hint: 'ДНО, КЛЬОВ 2-4 ХВ, ВЕЛИКА РИБА',
+      right: fed ? (S.mode === 'feeder' ? 'ОБРАНО' : 'ВЗЯТИ') : '$300',
+      dim: !fed,
+      fn: () => {
+        if (fed) { if (S.scr === 'game') selectMode('feeder'); else setMsgGlobal('ФІДЕР - КНОПКА ЗНИЗУ В ГРІ', '#8aa8b0'); }
+        else if (tryBuy('unlockedModes', 'feeder', 300)) setMsgGlobal('ФІДЕР КУПЛЕНО! КНОПКА ЗНИЗУ', '#7be08a');
+      }
+    });
+    RODS.forEach((r, i) => rows.push({
+      name: r.name, hint: r.hint,
+      right: (r.free || isUnlocked('unlockedRods', r.id)) ? ((S.rodIdx || 0) === i ? 'ОБРАНО' : 'ВЗЯТИ') : '$' + r.price,
+      dim: !(r.free || isUnlocked('unlockedRods', r.id)),
+      fn: () => {
+        if (r.free || isUnlocked('unlockedRods', r.id)) { S.rodIdx = i; save(); SND.ui(); }
+        else if (tryBuy('unlockedRods', r.id, r.price)) { S.rodIdx = i; save(); }
+      }
+    }));
+  } else if (tab === 2) {
+    LINES.forEach((l, i) => rows.push({
+      name: l.name, hint: l.hint,
+      right: (l.free || isUnlocked('unlockedLines', l.id)) ? ((S.lineIdx || 0) === i ? 'ОБРАНО' : 'ВЗЯТИ') : '$' + l.price,
+      dim: !(l.free || isUnlocked('unlockedLines', l.id)),
+      fn: () => {
+        if (l.free || isUnlocked('unlockedLines', l.id)) { S.lineIdx = i; save(); SND.ui(); }
+        else if (tryBuy('unlockedLines', l.id, l.price)) { S.lineIdx = i; save(); }
+      }
+    }));
+  } else {
+    FLOATS.forEach((f) => rows.push({
+      name: 'ПОПЛАВОК ' + f.name, hint: 'КАСТОМНИЙ ВИД',
+      right: (f.free || isUnlocked('unlockedFloats', f.id)) ? (S.floatId === f.id ? 'ОБРАНО' : 'ВЗЯТИ') : '$' + f.price,
+      dim: !(f.free || isUnlocked('unlockedFloats', f.id)),
+      fn: () => {
+        if (f.free || isUnlocked('unlockedFloats', f.id)) { S.floatId = f.id; rebuildFloat(); save(); SND.ui(); }
+        else if (tryBuy('unlockedFloats', f.id, f.price)) { S.floatId = f.id; rebuildFloat(); save(); }
+      }
+    }));
+    rows.push({
+      name: 'СВІЙ КОЛІР (РЕДАКТОР)', hint: 'Повністю кастомний поплавок',
+      right: isUnlocked('unlockedFloats', 'custom') ? (S.floatId === 'custom' ? 'ОБРАНО' : 'ВЗЯТИ') : '$150',
+      dim: !isUnlocked('unlockedFloats', 'custom'),
+      fn: () => {
+        if (isUnlocked('unlockedFloats', 'custom')) { S.floatId = 'custom'; rebuildFloat(); save(); S.floatEditOpen = true; SND.ui(); }
+        else if (tryBuy('unlockedFloats', 'custom', 150)) { S.floatId = 'custom'; rebuildFloat(); save(); S.floatEditOpen = true; }
+      }
+    });
+  }
+  const perPage = 7;
+  const pages = Math.max(1, Math.ceil(rows.length / perPage));
+  S.shopPage2 = clamp(S.shopPage2 || 0, 0, pages - 1);
+  rows.slice(S.shopPage2 * perPage, S.shopPage2 * perPage + perPage).forEach((r, i) => {
+    const y = 52 + i * 19, w = 292, x = 14;
+    const hov = pt.x >= x && pt.x < x + w && pt.y >= y && pt.y < y + 18;
+    panel(x, y, w, 18);
+    if (hov) { ctx.fillStyle = 'rgba(255,213,74,0.12)'; ctx.fillRect(x + 1, y + 1, w - 2, 16); }
+    drawText(r.name, x + 4, y + 2, 1, r.dim ? '#7a8a90' : '#e8f0f0');
+    drawText(r.hint, x + 4, y + 10, 1, '#5a747e');
+    drawText(r.right, x + w - 4, y + 6, 1, r.dim ? '#ffd54a' : '#6ac86a', 'right');
+    clicks.push({ x, y, w, h: 18, fn: r.fn });
+  });
+  if (pages > 1) {
+    btn(14, 192, 16, 14, '<', () => { S.shopPage2 = clamp(S.shopPage2 - 1, 0, pages - 1); SND.ui(); }, 1);
+    drawText((S.shopPage2 + 1) + '/' + pages, 160, 195, 1, '#8aa8b0', 'center');
+    btn(294, 192, 16, 14, '>', () => { S.shopPage2 = clamp(S.shopPage2 + 1, 0, pages - 1); SND.ui(); }, 1);
+  }
+  btn(122, 208, 76, 18, 'ЗАКРИТИ', () => { S.shopOpen = false; SND.ui(); }, 1);
+}
+
+/* ---------------- ОВЕРЛЕЙ: ОБМІН СИЛІКОНКАМИ (онлайн) ---------------- */
+function drawTrade() {
+  ctx.fillStyle = 'rgba(4,12,18,0.72)'; ctx.fillRect(0, 0, VW, VH);
+  clicks.push({ x: 0, y: 0, w: VW, h: VH, fn: () => {} });
+  panel(6, 10, 308, 220);
+  drawText('ОБМІН СИЛІКОНКАМИ', 160, 18, 2, '#ffd54a', 'center');
+  if (!(NET.conn && NET.conn.open)) {
+    drawText('ПОТРІБНО ПІД’ЄДНАТИСЬ ДО ДРУГА', 160, 70, 1, '#ffb050', 'center');
+    drawText('В ОНЛАЙН-РЕЖИМІ (МЕНЮ -> ОНЛАЙН П2П)', 160, 82, 1, '#ffb050', 'center');
+    btn(122, 150, 76, 18, 'ЗАКРИТИ', () => { S.tradeOpen = false; SND.ui(); }, 1);
+    return;
+  }
+  const mine = S.unlockedLures.slice();
+  drawText('ТВОЇ: ' + mine.length + '   У ДРУГА: ' + (NET.oppLures ? NET.oppLures.length : '?'), 160, 34, 1, '#c8d8dc', 'center');
+  drawText('КЛІКНИ СИЛІКОНКУ - ВІДПРАВИТИ ДРУГУ', 160, 44, 1, '#8aa8b0', 'center');
+  const perPage = 8;
+  const pages = Math.max(1, Math.ceil(mine.length / perPage));
+  S.tradePage = clamp(S.tradePage || 0, 0, pages - 1);
+  mine.slice(S.tradePage * perPage, S.tradePage * perPage + perPage).forEach((id, i) => {
+    const l = lureById(id);
+    const col = i % 4, row = (i / 4) | 0;
+    const x = 20 + col * 71, y = 56 + row * 46, w = 67, h = 42;
+    const hov = pt.x >= x && pt.x < x + w && pt.y >= y && pt.y < y + h;
+    panel(x, y, w, h);
+    if (hov) { ctx.fillStyle = 'rgba(255,213,74,0.14)'; ctx.fillRect(x + 1, y + 1, w - 2, h - 2); }
+    blit(l.spr.frames[(performance.now() / 160 | 0) % 2], x + 33, y + 12, 2, false);
+    drawText(l.n2, x + 33, y + 27, 1, '#e8f0f0', 'center');
+    drawText(l.n1, x + 33, y + 35, 1, '#8aa8b0', 'center');
+    clicks.push({ x, y, w, h, fn: () => {
+      compSend({ t: 'gift', id });
+      setMsgGlobal('ВІДПРАВЛЕНО ДРУГУ: ' + l.n1 + ' ' + l.n2, '#7be08a');
+      SND.sell();
+    } });
+  });
+  if (pages > 1) {
+    btn(14, 152, 16, 14, '<', () => { S.tradePage = clamp(S.tradePage - 1, 0, pages - 1); SND.ui(); }, 1);
+    drawText((S.tradePage + 1) + '/' + pages, 160, 155, 1, '#8aa8b0', 'center');
+    btn(294, 152, 16, 14, '>', () => { S.tradePage = clamp(S.tradePage + 1, 0, pages - 1); SND.ui(); }, 1);
+  }
+  btn(122, 208, 76, 18, 'ЗАКРИТИ', () => { S.tradeOpen = false; SND.ui(); }, 1);
+}
+
+/* ---------------- ОВЕРЛЕЙ: СКЛАД РИБИ ---------------- */
 function drawInv() {
   ctx.fillStyle = 'rgba(4,12,18,0.6)';
   ctx.fillRect(0, 0, VW, VH);
   panel(14, 16, 292, 208);
-  drawText('ІНВЕНТАР', 22, 24, 2, '#ffd54a');
-  let tot = 0, cnt = 0, sum = 0;
-  FISH.forEach(f => { const o = S.inv[f.id]; const k = o ? o.n : 0; tot += k; cnt += k ? 1 : 0; sum += o ? o.val : 0; });
-  drawText('РИБ: ' + tot + '  НА $' + sum, 298, 28, 1, '#c8d8dc', 'right');
+  drawText('СКЛАД РИБИ', 22, 24, 2, '#ffd54a');
+  let tot = 0, cnt = 0, sum = 0, kgs = 0;
+  FISH.forEach(f => { const o = S.inv[f.id]; const k = o ? o.n : 0; tot += k; cnt += k ? 1 : 0; sum += o ? o.val : 0; kgs += o ? o.kg : 0; });
+  drawText('РИБ: ' + tot + '/' + MAX_FISH + '  ' + kgs.toFixed(1) + 'КГ  НА $' + sum, 298, 28, 1, tot >= MAX_FISH ? '#ff8a4a' : '#c8d8dc', 'right');
+  bar(22, 38, 208, 4, tot / MAX_FISH);
   const invPage = S.invPage = clamp(S.invPage || 0, 0, Math.ceil(FISH.length / 12) - 1);
   const pageFish = FISH.slice(invPage * 12, invPage * 12 + 12);
   pageFish.forEach((f, i) => {
@@ -1088,7 +1456,7 @@ cv.addEventListener('mousedown', e => {
     const c = clicks[i];
     if (pt.x >= c.x && pt.x < c.x + c.w && pt.y >= c.y && pt.y < c.y + c.h) { c.fn(); return; }
   }
-  if (S.scr === 'game' && !S.paused && !S.invOpen) gameClick(pt.x, pt.y);
+  if (S.scr === 'game' && !S.paused && !S.invOpen && !S.shopOpen && !S.tradeOpen && !S.floatEditOpen) gameClick(pt.x, pt.y);
 });
 addEventListener('mouseup', () => { mouseHeld = false; });
 cv.addEventListener('mouseleave', () => { pt.x = -99; pt.y = -99; mouseHeld = false; });
@@ -1102,7 +1470,7 @@ cv.addEventListener('touchstart', e => {
     const c = clicks[i];
     if (pt.x >= c.x && pt.x < c.x + c.w && pt.y >= c.y && pt.y < c.y + c.h) { c.fn(); return; }
   }
-  if (S.scr === 'game' && !S.paused && !S.invOpen) gameClick(pt.x, pt.y);
+  if (S.scr === 'game' && !S.paused && !S.invOpen && !S.shopOpen && !S.tradeOpen && !S.floatEditOpen) gameClick(pt.x, pt.y);
 }, { passive: false });
 cv.addEventListener('touchmove', e => {
   e.preventDefault();
@@ -1114,14 +1482,22 @@ cv.addEventListener('touchcancel', e => { mouseHeld = false; pt.x = -99; pt.y = 
 addEventListener('blur', () => { mouseHeld = false; });
 document.addEventListener('visibilitychange', () => { if (document.hidden) mouseHeld = false; });
 addEventListener('keydown', e => {
-  if (S.scr !== 'game') return;
   const k = e.key.toLowerCase();
+  // на ПК цифри 1-3 змінюють вудку так само, як кнопки знизу
+  if (S.scr === 'game' && !S.paused && (k === '1' || k === '2' || k === '3')) {
+    selectMode(k === '1' ? 'float' : k === '2' ? 'feeder' : 'spin');
+    return;
+  }
+  if (S.scr !== 'game') return;
   if (k === 'escape') {
-    if (S.invOpen) { S.invOpen = false; }
+    if (S.floatEditOpen) S.floatEditOpen = false;
+    else if (S.shopOpen) S.shopOpen = false;
+    else if (S.tradeOpen) S.tradeOpen = false;
+    else if (S.invOpen) { S.invOpen = false; }
     else S.paused = !S.paused;
     SND.ui();
   }
-  if (k === 'i' || k === 'і' || k === 'ш') { S.invOpen = !S.invOpen; SND.ui(); }
+  if ((k === 'i' || k === 'і' || k === 'ш') && !S.shopOpen && !S.tradeOpen && !S.floatEditOpen) { S.invOpen = !S.invOpen; SND.ui(); }
 });
 
 /* ================================================================
@@ -1139,22 +1515,23 @@ const G = {
   chase: null, chaseCD: 1.5, strikeT: 0,
   fight: null, show: null,
   amb: [], ripples: [], parts: [],
-  msg: null, pauseT: 0, reelT: 0, wig: 0
+  msg: null, pauseT: 0, reelT: 0, wig: 0, tipWig: 0
 };
 
-function startGame() { S.scr = 'game'; S.paused = false; S.invOpen = false; initGame(); }
+function startGame() { S.scr = 'game'; S.paused = false; S.invOpen = false; S.shopOpen = false; S.tradeOpen = false; S.floatEditOpen = false; initGame(); }
 function initGame() {
   G.phase = 'idle'; G.fly = null; G.lure = null; G.float = null;
   G.bite = null; G.nib = null; G.chase = null; G.chaseCD = rnd(1, 2);
   G.fight = null; G.show = null; G.msg = null;
   G.amb = []; G.ripples = []; G.parts = [];
-  G.pauseT = 0; G.reelT = 0; G.baitOn = true;
+  G.pauseT = 0; G.reelT = 0; G.baitOn = true; G.tipWig = 0;
   spawnAmbient(6);
   setMsg(S.mode === 'spin' ? 'СИЛІКОНКА: ' + LURES[S.tIdx].n1 + ' ' + LURES[S.tIdx].n2 : 'НАЖИВКА: ' + BAITS[S.tIdx].name, '#ffd54a', 2.4);
 }
 function resetFishing() {
   G.phase = 'idle'; G.fly = null; G.lure = null; G.float = null;
   G.bite = null; G.nib = null; G.chase = null; G.fight = null; G.show = null;
+  G.tipWig = 0;
 }
 
 function setMsg(text, col, dur) { G.msg = { text, col: col || '#e8f0f0', t: dur || 2 }; }
@@ -1194,7 +1571,7 @@ function updFx(dt) {
 }
 
 function rodTipPos() {
-  const rod = S.mode === 'spin' ? ROD_SPIN : ROD_FLOAT;
+  const rod = S.mode === 'float' ? ROD_FLOAT : (S.mode === 'feeder' ? ROD_FEEDER : ROD_SPIN);
   return { x: PIV.x + Math.cos(rodAng) * rod.len, y: PIV.y + Math.sin(rodAng) * rod.len };
 }
 function inWater(x, y) { return x >= 14 && x <= 308 && y >= WT - 4 && y <= WB + 6; }
@@ -1229,6 +1606,14 @@ function landFly() {
     G.sinkT = 1.1;
     G.phase = 'sinkBait';
     scheduleBite();
+  } else if (S.mode === 'feeder') {
+    // годівниця їде на дно
+    G.rigY = clamp(Math.max(f.ty + 30, 190), 130, 206);
+    G.float = { x: f.tx, baseY: G.rigY - 3, y: f.ty, tilt: 0, t: 0, dipT: 0 };
+    G.baitY = f.ty + 4;
+    G.sinkT = 1.8;
+    G.phase = 'sinkBait';
+    scheduleBite();
   } else {
     G.lure = { x: f.tx, y: f.ty };
     G.pauseT = 0; G.chaseCD = rnd(0.8, 1.6);
@@ -1240,10 +1625,14 @@ function landFly() {
 function scheduleBite() {
   const bait = BAITS[S.tIdx];
   const prefMap = BAIT_PREF[bait.id];
-  const id = wpick(prefMap);
-  const pref = prefMap[id];
+  const w = {};
+  for (const id in prefMap) w[id] = prefMap[id];
+  // фідер ловить з дна: донна риба частіше
+  if (S.mode === 'feeder') { for (const id in w) { const sp = fishById(id); if (sp.zone === 2) w[id] *= 2.4; } }
+  const id = wpick(w);
   G.nextFish = fishById(id);
-  G.biteTimer = (3 + Math.random() * 5) * (1.6 - Math.min(1, pref / 5) * 0.9);
+  // поплавочна і фідер: перша покльовка через 2-4 хв після закиду
+  G.biteTimer = 120 + Math.random() * 120;
   G.nib = null;
 }
 function startNibble() {
@@ -1388,13 +1777,17 @@ function updFight(dt) {
   if (f.pull && Math.random() < dt * 0.7) { f.hop = 0.35; const p = fishPos(); addSplash(p.x, p.y, false); }
   f.hop = Math.max(0, f.hop - dt);
   if (f.D <= 24) {
-    const inv = S.inv[f.sp.id] || (S.inv[f.sp.id] = { n: 0, kg: 0, val: 0 });
-    inv.n++; inv.kg += f.wt; inv.val += f.price;
+    let sold = false;
+    if (invTotal() >= MAX_FISH) { sold = true; S.money += f.price; } // склад повний - автопродаж
+    else {
+      const inv = S.inv[f.sp.id] || (S.inv[f.sp.id] = { n: 0, kg: 0, val: 0 });
+      inv.n++; inv.kg += f.wt; inv.val += f.price;
+    }
     if (S.comp && S.comp.active && f.sp.id === S.comp.target) { S.comp.myScore++; compSend({ t: 'score', n: S.comp.myScore }); }
     save();
     addSplash(f.sx, f.sy, true); addRipple(f.sx, f.sy, 12);
     SND.catchF();
-    G.show = { sp: f.sp, wt: f.wt, price: f.price, t: 2.8 };
+    G.show = { sp: f.sp, wt: f.wt, price: f.price, t: 2.8, sold };
     G.fight = null; G.lure = null; G.float = null;
     G.phase = 'show';
   }
@@ -1403,7 +1796,7 @@ function updFight(dt) {
 /* ---------------- клік у грі ---------------- */
 function gameClick(x, y) {
   const ph = G.phase;
-  if (S.mode === 'float') {
+  if (S.mode === 'float' || S.mode === 'feeder') {
     if (ph === 'idle' || ph === 'sinkBait') { if (inWater(x, y)) cast(x, y); }
     else if (ph === 'wait') {
       if (G.bite) hookFloat();
@@ -1430,13 +1823,18 @@ function updRod(dt) {
   let strain = 0;
   if (G.phase === 'fight' && G.fight) strain = -0.05 - 0.12 * (G.fight.T / 100);
   else if (G.phase === 'reel') strain = -0.04;
+  else if (S.mode === 'feeder' && G.phase === 'wait') {
+    // покльовка на фідер: квівертип згинається
+    if (G.bite) strain = -0.20 + Math.sin(G.t * 16) * 0.05;
+    else if (G.tipWig > 0) { strain = -0.05 + Math.sin(G.t * 34) * 0.045; G.tipWig -= dt; }
+  }
   target += strain;
   rodAng += (target - rodAng) * Math.min(1, dt * 10);
 }
 
 function update(dt) {
   if (S.scr !== 'game') return;
-  if (S.paused || S.invOpen) return;
+  if (S.paused || S.invOpen || S.shopOpen || S.tradeOpen || S.floatEditOpen) return;
   if (S.comp && S.comp.active) {
     S.comp.t -= dt;
     if (S.comp.t <= 0) { S.comp.t = 0; S.comp.active = false; S.comp.finished = true; }
@@ -1453,25 +1851,30 @@ function update(dt) {
   }
   else if (G.phase === 'sinkBait') {
     G.float.t += dt;
-    G.float.y = G.float.baseY + Math.sin(G.float.t * 2.2) * 1;
+    if (S.mode === 'feeder') G.float.y += (G.float.baseY - G.float.y) * Math.min(1, dt * 2.0);
+    else G.float.y = G.float.baseY + Math.sin(G.float.t * 2.2) * 1;
     G.baitY += (G.rigY - G.baitY) * Math.min(1, dt * 2.2);
     G.sinkT -= dt;
-    if (G.sinkT <= 0) { G.baitY = G.rigY; G.phase = 'wait'; }
+    if (G.sinkT <= 0) { G.baitY = G.rigY; G.float.y = G.float.baseY; G.phase = 'wait'; }
   }
   else if (G.phase === 'wait') {
     const fl = G.float;
+    const isF = S.mode === 'feeder';
     fl.t += dt;
     if (G.bite) {
-      // поплавок пішов під воду
+      // покльовка: поплавок пішов під воду / фідер зігнувся
       G.bite.t -= dt;
-      fl.y = fl.baseY + 7;
-      fl.tilt = 0.55;
-      fl.x -= dt * 2;
-      if (Math.random() < dt * 3) addRipple(fl.x, fl.baseY, 5);
+      if (isF) { G.tipWig = 0.2; if (Math.random() < dt * 3) addRipple(fl.x, 86, 5); }
+      else {
+        fl.y = fl.baseY + 7;
+        fl.tilt = 0.55;
+        fl.x -= dt * 2;
+        if (Math.random() < dt * 3) addRipple(fl.x, fl.baseY, 5);
+      }
       if (G.bite.t <= 0) {
         // не встиг
         fl.y = fl.baseY; fl.tilt = 0;
-        addSplash(fl.x, fl.baseY, false);
+        addSplash(fl.x, isF ? 88 : fl.baseY, false);
         setMsg('РИБА ПІШЛА...', '#ffb050', 1.6);
         if (Math.random() < 0.5) setMsg('НАЖИВКУ ЗІРВАНО!', '#ffb050', 1.8);
         G.bite = null;
@@ -1482,13 +1885,16 @@ function update(dt) {
       nb.t += dt;
       if (nb.done < nb.seq.length && nb.t >= nb.seq[nb.done]) {
         nb.done++;
-        fl.dipT = 0.25;
         SND.nibble();
-        addRipple(fl.x, fl.baseY, 4);
+        if (isF) { G.tipWig = 0.3; addRipple(fl.x, 86, 4); }
+        else fl.dipT = 0.25;
       }
-      fl.dipT = Math.max(0, fl.dipT - dt);
-      fl.y = fl.baseY + (fl.dipT > 0 ? 1.5 : 0) + Math.sin(fl.t * 2) * 1;
-      fl.tilt = fl.dipT > 0 ? 0.22 * (nb.done % 2 ? 1 : -1) : 0;
+      if (isF) { fl.y = fl.baseY + Math.sin(fl.t * 2) * 0.6; }
+      else {
+        fl.dipT = Math.max(0, fl.dipT - dt);
+        fl.y = fl.baseY + (fl.dipT > 0 ? 1.5 : 0) + Math.sin(fl.t * 2) * 1;
+        fl.tilt = fl.dipT > 0 ? 0.22 * (nb.done % 2 ? 1 : -1) : 0;
+      }
       if (nb.done >= nb.seq.length && nb.t > nb.seq[nb.seq.length - 1] + 0.55) {
         // кінець потяжок: клює чи ні?
         if (Math.random() < 0.55) {
@@ -1561,14 +1967,15 @@ function update(dt) {
 
 /* ---------------- підказки ---------------- */
 function tipText() {
-  if (S.mode === 'float') {
-    if (G.phase === 'idle') return 'КЛАЦНИ ПО ВОДІ - ЗАКИНУТИ ВУДКУ';
+  if (S.mode === 'float' || S.mode === 'feeder') {
+    const fd = S.mode === 'feeder';
+    if (G.phase === 'idle') return fd ? 'КЛАЦНИ ПО ВОДІ - ЗАКИНУТИ ФІДЕР' : 'КЛАЦНИ ПО ВОДІ - ЗАКИНУТИ ВУДКУ';
     if (G.phase === 'fly') return 'ЗАКИДУВАННЯ...';
-    if (G.phase === 'sinkBait') return 'НАЖИВКА ТОНЕ ДО ДНА...';
+    if (G.phase === 'sinkBait') return fd ? 'ГОДІВНИЦЯ ЙДЕ НА ДНО...' : 'НАЖИВКА ТОНЕ ДО ДНА...';
     if (G.phase === 'wait') {
       if (G.bite) return '';
-      if (G.nib) return 'ДРІБНІ ПОТЯЖКИ... НЕ СПІШИ!';
-      return 'КЛАЦНИ, КОЛИ ПОПЛАВОК ПОЙДЕ ПІД ВОДУ';
+      if (G.nib) return fd ? 'ФІДЕР ТИПАЄ! ЙДЕ ПОКЛЬОВКА...' : 'ДРІБНІ ПОТЯЖКИ... НЕ СПІШИ!';
+      return fd ? 'ЧЕКАЙ - КЛЬОВ ЗА 2-4 ХВ ПІСЛЯ ЗАКИДУ' : 'ЧЕКАЙ - КЛЬОВ ЗА 2-4 ХВ, ПОТОМ КЛАЦНИ';
     }
     if (G.phase === 'fight') return 'ТРИМАЙ ЛКМ - ТЯГНЕШ, ВІДПУСТИ - ВІДДАЙ ЛІСКУ';
     return '';
@@ -1588,11 +1995,11 @@ function drawFloatSpr(x, y, ang, sc) {
   ctx.save();
   ctx.translate(Math.round(x), Math.round(y));
   ctx.rotate(ang);
-  ctx.drawImage(FLOAT_SPR.frames[0], -3 * sc, -8 * sc, 7 * sc, 17 * sc);
+  ctx.drawImage(curFloatSpr().frames[0], -3 * sc, -8 * sc, 7 * sc, 17 * sc);
   ctx.restore();
 }
 function drawRod() {
-  const rod = S.mode === 'spin' ? ROD_SPIN : ROD_FLOAT;
+  const rod = S.mode === 'float' ? ROD_FLOAT : (S.mode === 'feeder' ? ROD_FEEDER : ROD_SPIN);
   ctx.save();
   ctx.translate(PIV.x, PIV.y);
   ctx.rotate(rodAng);
@@ -1605,7 +2012,7 @@ function drawLineNow() {
   const tip = rodTipPos();
   let tx, ty, sag = 6;
   if (G.phase === 'fly') { const p = flyPos(); tx = p.x; ty = p.y; sag = 2; }
-  else if (G.float) { tx = G.float.x; ty = G.float.y - 6; sag = 4 + Math.sin(G.t * 2); }
+  else if (G.float) { tx = G.float.x; ty = S.mode === 'feeder' ? G.float.y : G.float.y - 6; sag = S.mode === 'feeder' ? 2 : 4 + Math.sin(G.t * 2); }
   else if (G.lure) { tx = G.lure.x; ty = G.lure.y; sag = G.phase === 'reel' ? 2 : 8; }
   else if (G.phase === 'fight' && G.fight) { const p = fishPos(); tx = p.x; ty = p.y; sag = Math.max(0, 8 - G.fight.T * 0.08); }
   else return;
@@ -1615,20 +2022,25 @@ function drawTackleOnWater(now) {
   if (G.phase === 'fly' && G.fly) {
     const p = flyPos();
     if (S.mode === 'float') drawFloatSpr(p.x, p.y, -0.4, 1);
+    else if (S.mode === 'feeder') blit(FEEDER_SPR.frames[0], p.x, p.y, 1, false);
     else blit(LURES[S.tIdx].spr.frames[0], p.x, p.y, 1, false);
     return;
   }
   if (G.float) {
-    // лісок до поплавка
-    // наживка під водою
     if (G.phase === 'wait' || G.phase === 'sinkBait') {
       const b = BAITS[S.tIdx];
       ctx.globalAlpha = 0.85;
-      blit(b.spr.frames[(now / 300 | 0) % 2], G.float.x, G.baitY, 1, false);
+      blit(b.spr.frames[(now / 300 | 0) % 2], G.float.x + (S.mode === 'feeder' ? 6 : 0), G.baitY, 1, false);
       ctx.globalAlpha = 1;
-      pixLine(G.float.x, G.float.y + 6, G.float.x, G.baitY, 0, 'rgba(14,24,30,0.5)');
+      if (S.mode === 'feeder') pixLine(G.float.x + 4, G.float.y, G.float.x + 6, G.baitY, 0, 'rgba(14,24,30,0.5)');
+      else pixLine(G.float.x, G.float.y + 6, G.float.x, G.baitY, 0, 'rgba(14,24,30,0.5)');
     }
-    drawFloatSpr(G.float.x, G.float.y, G.float.tilt || 0, 1);
+    if (S.mode === 'feeder') {
+      // годівниця під водою замість поплавка
+      ctx.globalAlpha = 0.92;
+      blit(FEEDER_SPR.frames[0], G.float.x, G.float.y, 1, false);
+      ctx.globalAlpha = 1;
+    } else drawFloatSpr(G.float.x, G.float.y, G.float.tilt || 0, 1);
   }
   if (G.lure) {
     const L = LURES[S.tIdx];
@@ -1662,10 +2074,23 @@ function drawHud(now) {
   panel(VW - tw - 26, 2, tw + 24, 16);
   blit(it.spr.frames[(now / 220 | 0) % 2], VW - tw - 14, 10, 1, false);
   drawText(nm, VW - 6, 6, 1, '#e8f0f0', 'right');
-  btn(VW - 50, 22, 46, 15, 'ІНВ (I)', () => { S.invOpen = true; SND.ui(); });
+  btn(VW - 50, 22, 46, 15, 'СКЛАД I', () => { S.invOpen = true; SND.ui(); });
   btn(VW - 50, 41, 46, 15, 'МЕНЮ', () => { S.paused = true; SND.ui(); });
+  // 3 кнопки зліва: МАГАЗИН / ОБМІН / СКЛАД
+  btn(2, 22, 44, 14, 'МАГАЗИН', () => { openShop(); });
+  btn(2, 38, 44, 14, 'ОБМІН', () => { openTrade(); });
+  btn(2, 54, 44, 14, 'СКЛАД', () => { S.invOpen = true; SND.ui(); });
+  // 3 кнопки знизу: швидка зміна вудки (на ПК те саме роблять цифри 1-3)
+  MODES.forEach((m, i) => {
+    const owned = m.free || isUnlocked('unlockedModes', m.id);
+    btn(64 + i * 66, 225, 62, 13, owned ? m.btn : m.btn + ' $' + m.price, () => { selectMode(m.id); }, 1, false, S.mode === m.id);
+  });
   const tip = tipText();
-  if (tip) drawText(tip, 150, 230, 1, '#eef4f6', 'center');
+  if (tip) drawText(tip, 150, 214, 1, '#eef4f6', 'center');
+  if ((S.mode === 'float' || S.mode === 'feeder') && G.phase === 'wait' && !G.bite && !G.nib && G.biteTimer > 0) {
+    const mm = Math.floor(G.biteTimer / 60), ss2 = Math.floor(G.biteTimer % 60);
+    drawText('ДО КЛЬОВУ: ~' + mm + ':' + (ss2 < 10 ? '0' : '') + ss2, 160, 74, 1, '#8fd0e8', 'center');
+  }
   const msgY = G.phase === 'fight' ? 56 : 44;
   if (G.msg) drawText(G.msg.text, 150, msgY, 1, G.msg.col, 'center');
   const alert = (G.phase === 'strike' || (G.phase === 'wait' && G.bite));
@@ -1677,6 +2102,7 @@ function drawHud(now) {
     drawText('РИБА', 162, 26, 1, '#e8f0f0');
     bar(162, 36, 58, 5, G.fight.S / 100);
   }
+  if (_globalMsg) { drawText(_globalMsg.text, 160, 96, 1, _globalMsg.col, 'center'); _globalMsg.t -= 1 / 60; if (_globalMsg.t <= 0) _globalMsg = null; }
   if (S.comp) drawCompHud();
 }
 function drawCompHud() {
@@ -1709,7 +2135,7 @@ function drawShow(now) {
   drawText(s.sp.name, 160, 122, 1, '#e8f0f0', 'center');
   drawText('ВАГА: ' + s.wt.toFixed(2) + ' КГ', 160, 134, 1, '#c8d8dc', 'center');
   drawText('ЦІНА: $' + s.price, 160, 146, 1, '#ffd54a', 'center');
-  drawText('ПРОДАЙ В ІНВЕНТАРІ (I)', 160, 162, 1, '#6a8a94', 'center');
+  drawText(s.sold ? 'СКЛАД БУВ ПОВНИЙ - ПРОДАНО АВТОМАТИЧНО' : 'РИБА НА СКЛАДІ (КНОПКА СКЛАД АБО I)', 160, 162, 1, '#6a8a94', 'center');
 }
 function drawGame(now) {
   drawBG();
@@ -1745,11 +2171,15 @@ function loop(ts) {
   else if (S.scr === 'tackle') { drawBG(); drawTackle(ts); }
   else if (S.scr === 'gear') { drawBG(); drawGear(ts); }
   else if (S.scr === 'online') { drawBG(); drawOnline(ts); }
+  else if (S.scr === 'floats') { drawBG(); drawFloats(ts); }
   else {
     drawGame(ts);
     if (S.invOpen) drawInv();
     if (S.paused) drawPause();
   }
+  if (S.shopOpen) drawShop();
+  if (S.tradeOpen) drawTrade();
+  if (S.floatEditOpen) drawFloatEdit();
   drawCursor();
   requestAnimationFrame(loop);
 }
