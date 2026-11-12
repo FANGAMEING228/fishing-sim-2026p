@@ -731,6 +731,8 @@ const S = {
   floatId: 'f0',
   floatCustom: null,
   shopPage: 0, shopTab: 0, shopPage2: 0, tradePage: 0,
+  pinBuf: '',
+  autoUnlocked: false, autoOn: false,   // СЕКРЕТ: пін-код 1111 у магазині відкриває автоловлю
   sound: true,
   paused: false,
   invOpen: false,
@@ -761,6 +763,8 @@ try {
   if (typeof sv.lineIdx === 'number') S.lineIdx = sv.lineIdx;
   if (typeof sv.tIdxSpin === 'number') S.tIdxSpin = sv.tIdxSpin;
   if (typeof sv.tIdxBait === 'number') S.tIdxBait = sv.tIdxBait;
+  if (sv.autoUnlocked) S.autoUnlocked = true;
+  if (sv.autoOn) S.autoOn = true;
 } catch (e) {}
 rebuildFloat();
 function save() {
@@ -772,7 +776,8 @@ function save() {
       unlockedModes: S.unlockedModes, unlockedFloats: S.unlockedFloats,
       floatId: S.floatId, floatCustom: S.floatCustom,
       tIdxSpin: S.tIdxSpin, tIdxBait: S.tIdxBait,
-      rodIdx: S.rodIdx, lineIdx: S.lineIdx
+      rodIdx: S.rodIdx, lineIdx: S.lineIdx,
+      autoUnlocked: !!S.autoUnlocked, autoOn: !!S.autoOn
     }));
   } catch (e) {}
 }
@@ -897,6 +902,11 @@ function updStand(kind, dt) {
     if (st.bite) {
       // покльовка: поплавок пішов під воду / квівертип тіпає
       st.bite.t -= dt;
+      // автоловля: сама підсікає на ставній вудці (працює з однією і з двома)
+      if (autoActive()) {
+        st.bite.autoT = (st.bite.autoT || 0) + dt;
+        if (st.bite.autoT > 1.2 && !G.fight) { hookStand(kind); return; }
+      }
       if (isF) { if (Math.random() < dt * 3) addRipple(fl.x, 86, 5); }
       else { fl.y = fl.baseY + 7; fl.tilt = 0.55; fl.x -= dt * 2; if (Math.random() < dt * 3) addRipple(fl.x, fl.baseY, 5); }
       if (st.bite.t <= 0) {
@@ -1427,7 +1437,7 @@ function drawFloatEdit() {
 }
 
 /* ---------------- ОВЕРЛЕЙ: МАГАЗИН (купити силіконки, вудки, ліска, поплавки) ---------------- */
-const SHOP_TABS = ['СИЛІК', 'ВУДКИ', 'ЛІСКА', 'ПОПЛАВ'];
+const SHOP_TABS = ['СИЛІК', 'ВУДКИ', 'ЛІСКА', 'ПОПЛАВ', 'ПІНКОД'];
 function drawShop() {
   ctx.fillStyle = 'rgba(4,12,18,0.72)'; ctx.fillRect(0, 0, VW, VH);
   clicks.push({ x: 0, y: 0, w: VW, h: VH, fn: () => {} });
@@ -1435,7 +1445,7 @@ function drawShop() {
   drawText('МАГАЗИН', 14, 16, 2, '#ffd54a');
   drawText('$' + S.money, 306, 20, 1, '#ffd54a', 'right');
   SHOP_TABS.forEach((t, i) => {
-    btn(14 + i * 74, 32, 70, 14, t, () => { S.shopTab = i; S.shopPage2 = 0; SND.ui(); }, 1, false, (S.shopTab || 0) === i);
+    btn(14 + i * 58, 32, 56, 14, t, () => { S.shopTab = i; S.shopPage2 = 0; SND.ui(); }, 1, false, (S.shopTab || 0) === i);
   });
   const rows = [];
   const tab = S.shopTab || 0;
@@ -1485,7 +1495,7 @@ function drawShop() {
         else if (tryBuy('unlockedLines', l.id, l.price)) { S.lineIdx = i; save(); }
       }
     }));
-  } else {
+  } else if (tab === 3) {
     FLOATS.forEach((f) => rows.push({
       name: 'ПОПЛАВОК ' + f.name, hint: 'КАСТОМНИЙ ВИД',
       right: (f.free || isUnlocked('unlockedFloats', f.id)) ? (S.floatId === f.id ? 'ОБРАНО' : 'ВЗЯТИ') : '$' + f.price,
@@ -1505,6 +1515,7 @@ function drawShop() {
       }
     });
   }
+  if (tab === 4) { drawPinTab(); return; }
   const perPage = 7;
   const pages = Math.max(1, Math.ceil(rows.length / perPage));
   S.shopPage2 = clamp(S.shopPage2 || 0, 0, pages - 1);
@@ -1524,6 +1535,59 @@ function drawShop() {
     btn(294, 192, 16, 14, '>', () => { S.shopPage2 = clamp(S.shopPage2 + 1, 0, pages - 1); SND.ui(); }, 1);
   }
   btn(122, 208, 76, 18, 'ЗАКРИТИ', () => { S.shopOpen = false; SND.ui(); }, 1);
+}
+
+/* ---------------- ОВЕРЛЕЙ: СЕКРЕТНИЙ ПІН-КОД (АВТОЛОВЛЯ) ---------------- */
+let _pinMsg = null;
+function setPinMsg(text, col) { _pinMsg = { text, col, t: 1.8 }; }
+function toggleAuto() {
+  S.autoOn = !S.autoOn; save();
+  setPinMsg(S.autoOn ? 'АВТОЛОВЛЯ УВІМКНЕНА' : 'АВТОЛОВЛЯ ВИМКНЕНА', S.autoOn ? '#7be08a' : '#8aa8b0');
+  SND.ui();
+}
+function drawPinTab() {
+  if (S.autoUnlocked) {
+    drawText('СЕКРЕТНИЙ РЕЖИМ АКТИВОВАНО!', 160, 58, 1, '#6ac86a', 'center');
+    drawText('ГРА САМА ПІДСІКАЄ, ВИВАЖУЄ', 160, 78, 1, '#c8d8dc', 'center');
+    drawText('І САМА ЗАКИДАЄ СПІНІНГ.', 160, 88, 1, '#c8d8dc', 'center');
+    drawText('ПРАЦЮЄ З 1-2 СТАВНИМИ ВУДКАМИ', 160, 104, 1, '#c8d8dc', 'center');
+    drawText('І В ОНЛАЙНІ З ДРУГОМ.', 160, 114, 1, '#c8d8dc', 'center');
+    btn(70, 138, 180, 26, S.autoOn ? 'АВТОЛОВЛЯ: УВІМК' : 'АВТОЛОВЛЯ: ВИМК', toggleAuto, 1, false, S.autoOn);
+    drawText('У ГРІ СПРАВА ЗГОРИ Є КНОПКА АВТО', 160, 174, 1, '#5a747e', 'center');
+  } else {
+    drawText('ВВЕДИ ПІН-КОД (4 ЦИФРИ):', 160, 52, 1, '#c8d8dc', 'center');
+    const buf = S.pinBuf || '';
+    for (let i = 0; i < 4; i++) {
+      const bx = 99 + i * 32;
+      panel(bx, 62, 26, 20);
+      drawText(buf[i] || '-', bx + 13, 68, 1, buf[i] ? '#ffd54a' : '#3a525c', 'center');
+    }
+    const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'ОЧИСТИ', '0', 'ВИДАЛИТИ'];
+    keys.forEach((kk, i) => {
+      const col = i % 3, row = (i / 3) | 0;
+      btn(67 + col * 64, 90 + row * 22, 58, 18, kk, () => {
+        if (kk === 'ОЧИСТИ') { S.pinBuf = ''; SND.ui(); }
+        else if (kk === 'ВИДАЛИТИ') { S.pinBuf = (S.pinBuf || '').slice(0, -1); SND.ui(); }
+        else if ((S.pinBuf || '').length < 4) { S.pinBuf = (S.pinBuf || '') + kk; SND.nibble(); }
+      }, 1);
+    });
+    btn(110, 182, 100, 18, 'УВІЙТИ', () => {
+      if ((S.pinBuf || '') === '1111') {
+        S.autoUnlocked = true; S.autoOn = true; S.pinBuf = ''; save();
+        setPinMsg('АВТОЛОВЛЯ ВІДКРИТА!', '#7be08a');
+        SND.catchF();
+      } else {
+        S.pinBuf = '';
+        setPinMsg('НЕВІРНИЙ ПІН-КОД', '#ff5a4a');
+        SND.early();
+      }
+    }, 1);
+  }
+  btn(122, 208, 76, 18, 'ЗАКРИТИ', () => { S.shopOpen = false; SND.ui(); }, 1);
+  if (_pinMsg) {
+    drawText(_pinMsg.text, 160, 200, 1, _pinMsg.col, 'center');
+    _pinMsg.t -= 1 / 60; if (_pinMsg.t <= 0) _pinMsg = null;
+  }
 }
 
 /* ---------------- ОВЕРЛЕЙ: ОБМІН СИЛІКОНКАМИ (онлайн) ---------------- */
@@ -1738,6 +1802,7 @@ function resetFishing() {
   G.phase = 'idle'; G.fly = null; G.lure = null; G.float = null;
   G.bite = null; G.nib = null; G.chase = null; G.fight = null; G.show = null;
   G.tipWig = 0;
+  G.autoHold = false; G.autoHoldT = 0; G.autoCastT = 0; G.autoStrikeT = 0;
 }
 
 function setMsg(text, col, dur) { G.msg = { text, col: col || '#e8f0f0', t: dur || 2 }; }
@@ -1963,7 +2028,7 @@ function updFight(dt) {
     if (f.pull) SND.run();
   }
   if (f.tired) f.pull = false;
-  const held = mouseHeld;
+  const held = mouseHeld || (autoActive() && G.autoHold === true);
   if (held) {
     f.D -= (f.pull ? 7 : 24) * dt;
     f.T += (f.pull ? 24 + 16 * f.pm : 7) * dt / (f.lineStr || 1);
@@ -2049,6 +2114,10 @@ function gameClick(x, y) {
   }
 }
 
+/* ---------------- СЕКРЕТНА АВТОЛОВЛЯ (пін-код 1111 у магазині) ---------------- */
+function autoActive() { return !!(S.autoUnlocked && S.autoOn); }
+function autoHeld() { return autoActive() && G.autoHold === true; }
+
 /* ---------------- оновлення ---------------- */
 function updRod(dt) {
   let target = -2.3;
@@ -2080,6 +2149,30 @@ function update(dt) {
   updAmb(dt);
   updFx(dt);
   if (G.msg) { G.msg.t -= dt; if (G.msg.t <= 0) G.msg = null; }
+
+  // автоловля: гра сама закидає, веде проводку, підсікає і виважує
+  if (autoActive()) {
+    if (G.phase === 'sink' || G.phase === 'reel') {
+      G.autoHoldT = (G.autoHoldT || 0) - dt;
+      if (G.autoHoldT <= 0) { G.autoHold = !G.autoHold; G.autoHoldT = G.autoHold ? rnd(0.8, 1.5) : rnd(0.45, 0.95); }
+    }
+    if (G.phase === 'fight' && G.fight) {
+      const f = G.fight;
+      G.autoHold = f.tired ? true : (f.T > 86 ? false : !f.pull);
+    }
+    if (G.phase === 'idle' && !G.fight) {
+      G.autoCastT = (G.autoCastT || 0) + dt;
+      if (G.autoCastT > 0.9) { G.autoCastT = 0; const c = clampCast(rnd(40, 250), rnd(112, 196)); cast(c.x, c.y); }
+    }
+    if (G.phase === 'strike') {
+      G.autoStrikeT = (G.autoStrikeT || 0) + dt;
+      if (G.autoStrikeT > 0.3) { G.autoStrikeT = 0; hookSpin(); }
+    }
+    if (G.phase === 'wait' && G.bite) {
+      G.bite.autoT = (G.bite.autoT || 0) + dt;
+      if (G.bite.autoT > 0.5) hookFloat();
+    }
+  }
 
   if (G.phase === 'fly') {
     G.fly.t += dt / G.fly.dur;
@@ -2156,7 +2249,7 @@ function update(dt) {
     G.lure.y = Math.min(206, G.lure.y + LURES[S.tIdx].sink * dt);
     G.pauseT += dt;
     G.wig += dt * 3;
-    if (mouseHeld) { G.phase = 'reel'; }
+    if (mouseHeld || autoHeld()) { G.phase = 'reel'; }
     else {
       tryChase(dt);
       if (G.chase) updChase(dt);
@@ -2169,7 +2262,7 @@ function update(dt) {
     G.lure.y += Math.sin(G.wig * 2) * 0.12;
     G.pauseT = 0;
     G.reelT -= dt; if (G.reelT <= 0) { SND.reel(); G.reelT = 0.09; }
-    if (!mouseHeld) G.phase = 'sink';
+    if (!mouseHeld && !autoHeld()) G.phase = 'sink';
     if (G.lure.x > PIV.x - 26) {
       G.lure = null; G.chase = null; G.phase = 'idle';
       setMsg('ПРОВОДКУ ЗАВЕРШЕНО - ЗАКИНУЙ ЗНОВУ');
@@ -2377,6 +2470,8 @@ function drawHud(now) {
   drawText(nm, VW - 6, 6, 1, '#e8f0f0', 'right');
   btn(VW - 50, 22, 46, 15, 'СКЛАД I', () => { S.invOpen = true; SND.ui(); });
   btn(VW - 50, 41, 46, 15, 'МЕНЮ', () => { S.paused = true; SND.ui(); });
+  // секретна автоловля: кнопка з'являється тільки після пін-кода 1111 у магазині
+  if (S.autoUnlocked) btn(VW - 66, 60, 62, 15, S.autoOn ? 'АВТО УВІМК' : 'АВТО ВИКЛ', () => { S.autoOn = !S.autoOn; save(); setMsgGlobal(S.autoOn ? 'АВТОЛОВЛЯ УВІМКНЕНА' : 'АВТОЛОВЛЯ ВИМКНЕНА', S.autoOn ? '#7be08a' : '#8aa8b0'); SND.ui(); }, 1, false, S.autoOn);
   // 3 кнопки зліва: МАГАЗИН / ОБМІН / СКЛАД
   btn(2, 22, 44, 14, 'МАГАЗИН', () => { openShop(); });
   btn(2, 38, 44, 14, 'ОБМІН', () => { openTrade(); });
@@ -2512,6 +2607,8 @@ window.__dbg = {
   catchFish: (id) => { if (S.scr === 'game') { fightInit(fishById(id || 'perch'), { x: 160, y: 150 }); G.fight.D = 24; } },
   stand: (k) => { if (S.scr === 'game') placeStand(k || 'float', true); },
   biteStand: (k) => { const st = S.stand[k || 'float']; if (st) { st.biteTimer = 0.01; } },
+  auto: (on) => { S.autoUnlocked = true; S.autoOn = on === undefined ? true : !!on; },
+  pinLock: () => { S.autoUnlocked = false; S.autoOn = false; S.pinBuf = ''; save(); },
   go: (scr) => { S.scr = scr; if (scr === 'game') { S.mode = 'spin'; S.tIdx = S.tIdxSpin || 0; initGame(); } }
 };
 
