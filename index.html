@@ -753,8 +753,10 @@ const S = {
   rodIdx: 0, lineIdx: 0,
   money: 0,
   inv: {},
-  stands: [],          // ставні вудки (ДО 12): поплавочні зліва ряд, фідери в центрі
-  rodKit: { float: 1, feeder: 1 }, // скількох СТАВНИХ вудок маєш (ще можна купити)
+  stands: [],          // ставні вудки (ДО 24): поплавочні зліва ряд, фідери в центрі, спінінги справа
+  rodKit: { float: 1, feeder: 1, spin: 1 }, // скількох вудок маєш (ще можна купити: по 12 + 3 спінінги)
+  workers: 0,          // РОБІТНИКИ (до 3): самі підсікають рибу на ставних вудках
+  fastBite: false,     // АДМІН: швидкий клів (увімк у секретному меню)
   netSel: 'coop',      // вибраний онлайн-режим: 'coop' | 'comp'
   coop: null,          // спільна рибалка онлайн
   xp: 0, level: 1,     // рівні рибалки
@@ -808,7 +810,9 @@ try {
   if (sv.unlockedModes) S.unlockedModes = sv.unlockedModes;
   if (sv.unlockedFloats) S.unlockedFloats = sv.unlockedFloats;
   if (!S.unlockedLures.includes('shch')) S.unlockedLures.push('shch'); // нова безкоштовна щуча силіконка
-  if (sv.rodKit) S.rodKit = { float: sv.rodKit.float || 1, feeder: sv.rodKit.feeder || 1 };
+  if (sv.rodKit) S.rodKit = { float: sv.rodKit.float || 1, feeder: sv.rodKit.feeder || 1, spin: sv.rodKit.spin || 1 };
+  if (typeof sv.workers === 'number') S.workers = clamp(sv.workers, 0, 3);
+  if (sv.fastBite) S.fastBite = true;
   if (typeof sv.xp === 'number') S.xp = sv.xp;
   if (typeof sv.level === 'number') S.level = sv.level;
   if (sv.records) S.records = sv.records;
@@ -845,7 +849,8 @@ function save() {
       tIdxSpin: S.tIdxSpin, tIdxBait: S.tIdxBait,
       rodIdx: S.rodIdx, lineIdx: S.lineIdx,
       autoUnlocked: !!S.autoUnlocked, autoOn: !!S.autoOn,
-      rodKit: S.rodKit, xp: S.xp, level: S.level, records: S.records,
+      rodKit: S.rodKit, workers: S.workers || 0, fastBite: !!S.fastBite,
+      xp: S.xp, level: S.level, records: S.records,
       achv: S.achv, stats: S.stats, reelUp: !!S.reelUp, amulet: !!S.amulet,
       dailyLast: S.dailyLast, log: S.log, quests: S.quests
     }));
@@ -959,10 +964,14 @@ const MODES = [
   { id: 'feeder', name: 'ФІДЕР',      btn: 'ФІДЕР', price: 300, hint: 'СТАВНА, ЦЕНТР. ВЕЛИКА РИБА' },
   { id: 'spin',   name: 'СПІНІНГ',    btn: 'СПІН',  free: true, hint: 'В РУКАХ, СПРАВА. ЯК І БУЛО' }
 ];
-/* ---------------- СТАВНІ ВУДКИ: ДО 12 ШТУК, СТОЯТЬ РЯД, ОДНА БІЛЯ ОДНОЇ ----------------
-   поплавочні — зліва (6 місць), фідери — в центрі (6 місць), спінінг — в руках справа.
+/* ---------------- СТАВНІ ВУДКИ: ДО 24 ШТУК (12 ПОПЛАВОЧНИХ + 12 ФІДЕРІВ), РЯДОМ ----------------
+   ФІКС: тепер у КОЖНІЙ секції можна купити ДО 12 вудок (більше не обмеження 6).
+   поплавочні — зліва (12 місць), фідери — в центрі (12 місць),
+   спінінги — справа (до 3, стоять поруч і ловлять самі).
    КОЖНА вудка ловить САМА: 1 вудка = 1 риба за 2-4 хв, 4 вудки = 4 риби за той самий час. */
-const MAX_STANDS = 12;
+const MAX_STANDS = 24;
+const MAX_PER_KIND = 12;
+const SPIN_STAND_MAX = 3;
 const STAND_SLOTS = {
   float: [
     { piv: { x: 58, y: 213 }, ang: -1.02, spot: { x: 106, y: 158 } },
@@ -970,7 +979,13 @@ const STAND_SLOTS = {
     { piv: { x: 30, y: 215 }, ang: -0.94, spot: { x: 84,  y: 165 } },
     { piv: { x: 72, y: 214 }, ang: -1.04, spot: { x: 119, y: 160 } },
     { piv: { x: 86, y: 215 }, ang: -1.00, spot: { x: 136, y: 163 } },
-    { piv: { x: 16, y: 214 }, ang: -0.92, spot: { x: 71,  y: 167 } }
+    { piv: { x: 16, y: 214 }, ang: -0.92, spot: { x: 71,  y: 167 } },
+    { piv: { x: 100, y: 214 }, ang: -1.06, spot: { x: 148, y: 165 } },
+    { piv: { x: 8,  y: 215 }, ang: -0.90, spot: { x: 48,  y: 169 } },
+    { piv: { x: 112, y: 215 }, ang: -1.10, spot: { x: 162, y: 168 } },
+    { piv: { x: 22, y: 216 }, ang: -0.96, spot: { x: 60,  y: 172 } },
+    { piv: { x: 124, y: 216 }, ang: -1.14, spot: { x: 176, y: 170 } },
+    { piv: { x: 2,  y: 216 }, ang: -0.88, spot: { x: 34,  y: 172 } }
   ],
   feeder: [
     { piv: { x: 170, y: 214 }, ang: -1.12, spot: { x: 200, y: 184 } },
@@ -978,7 +993,18 @@ const STAND_SLOTS = {
     { piv: { x: 144, y: 215 }, ang: -1.08, spot: { x: 178, y: 190 } },
     { piv: { x: 156, y: 213 }, ang: -1.10, spot: { x: 188, y: 194 } },
     { piv: { x: 183, y: 214 }, ang: -1.13, spot: { x: 213, y: 186 } },
-    { piv: { x: 115, y: 215 }, ang: -1.04, spot: { x: 152, y: 192 } }
+    { piv: { x: 115, y: 215 }, ang: -1.04, spot: { x: 152, y: 192 } },
+    { piv: { x: 196, y: 215 }, ang: -1.16, spot: { x: 222, y: 188 } },
+    { piv: { x: 100, y: 216 }, ang: -1.02, spot: { x: 142, y: 193 } },
+    { piv: { x: 208, y: 216 }, ang: -1.20, spot: { x: 218, y: 182 } },
+    { piv: { x: 88,  y: 217 }, ang: -1.00, spot: { x: 132, y: 195 } },
+    { piv: { x: 220, y: 217 }, ang: -1.24, spot: { x: 212, y: 178 } },
+    { piv: { x: 76,  y: 218 }, ang: -0.98, spot: { x: 122, y: 196 } }
+  ],
+  spin: [
+    { piv: { x: 258, y: 221 }, ang: -2.18, spot: { x: 196, y: 152 } },
+    { piv: { x: 274, y: 223 }, ang: -2.24, spot: { x: 206, y: 160 } },
+    { piv: { x: 242, y: 223 }, ang: -2.12, spot: { x: 184, y: 156 } }
   ]
 };
 let standSeq = 0;
@@ -988,28 +1014,39 @@ function nextSlot(kind) {
   for (let i = 0; i < STAND_SLOTS[kind].length; i++) if (!used.includes(i)) return i;
   return -1;
 }
-function rodKitPrice(kind) { return kind === 'float' ? 200 + ((S.rodKit.float || 1) - 1) * 120 : 300 + ((S.rodKit.feeder || 1) - 1) * 180; }
+function rodKitPrice(kind) {
+  if (kind === 'float') return 200 + ((S.rodKit.float || 1) - 1) * 120;
+  if (kind === 'feeder') return 300 + ((S.rodKit.feeder || 1) - 1) * 180;
+  return 500 + ((S.rodKit.spin || 1) - 1) * 400; // спінінг: 2-й $500, 3-й $900
+}
+function kindMax(kind) { return kind === 'spin' ? SPIN_STAND_MAX : MAX_PER_KIND; }
 function buyRodKit(kind) {
   const owned = S.rodKit[kind] || 0;
-  if (owned >= STAND_SLOTS[kind].length) { setMsgGlobal('БІЛЬШЕ ' + (kind === 'float' ? 'ПОПЛАВОЧНИХ' : 'ФІДЕРІВ') + ' НЕМА (МАКС 6)', '#ffb050'); return; }
-  if (S.rodKit.float + S.rodKit.feeder >= MAX_STANDS) { setMsgGlobal('МАКСИМУМ 12 ВУДОК!', '#ff5a4a'); return; }
+  const nm = kind === 'float' ? 'ПОПЛАВОЧНИХ' : kind === 'feeder' ? 'ФІДЕРІВ' : 'СПІНІНГІВ';
+  if (owned >= kindMax(kind)) { setMsgGlobal('БІЛЬШЕ ' + nm + ' НЕМА (МАКС ' + kindMax(kind) + ')', '#ffb050'); return; }
+  if (kind !== 'spin' && (S.rodKit.float || 0) + (S.rodKit.feeder || 0) >= MAX_STANDS) { setMsgGlobal('МАКСИМУМ 24 СТАВНІ ВУДКИ!', '#ff5a4a'); return; }
   const price = rodKitPrice(kind);
   if (S.money < price) { setMsgGlobal('НЕ ВИСТАЧАЄ ГРОШЕЙ!', '#ff5a4a'); SND.snap(); return; }
   S.money -= price; S.rodKit[kind] = owned + 1; save();
-  setMsgGlobal('КУПЛЕНО ВУДКУ +1! ПОПЛ: ' + S.rodKit.float + '  ФІД: ' + S.rodKit.feeder, '#7be08a');
+  if (kind === 'spin') {
+    setMsgGlobal('КУПЛЕНО СПІНІНГ +' + (owned + 1) + '! НАЖМИ [3], ЩОБ ПОСТАВИТИ', '#7be08a');
+  } else {
+    setMsgGlobal('КУПЛЕНО ВУДКУ +1! ПОПЛ: ' + (S.rodKit.float || 0) + '  ФІД: ' + (S.rodKit.feeder || 0), '#7be08a');
+  }
   addLog('КУПЛЕНО ВУДКУ (' + kind + ') $' + price, '#7be08a');
   SND.sell();
 }
 function standTipOf(st, ang) {
-  const rod = st.kind === 'float' ? ROD_FLOAT : ROD_FEEDER;
+  const rod = st.kind === 'float' ? ROD_FLOAT : st.kind === 'feeder' ? ROD_FEEDER : ROD_SPIN;
   const a = ang === undefined ? (st.dispAng !== undefined ? st.dispAng : st.cfg.ang) : ang;
   return { x: st.cfg.piv.x + Math.cos(a) * rod.len, y: st.cfg.piv.y + Math.sin(a) * rod.len };
 }
+function curSpinLure() { return LURES[S.tIdxSpin || 0] || LURES[0]; }
 function clearStands() { S.stands = []; }
 function placeStand(kind, silent) {
   const m = MODES.find(x => x.id === kind);
   if (!m || kind === 'spin') return false;
-  if (S.stands.length >= MAX_STANDS) { if (!silent) setMsgGlobal('МАКСИМУМ 12 ВУДОК!', '#ff5a4a'); return false; }
+  if (S.stands.length >= MAX_STANDS) { if (!silent) setMsgGlobal('МАКСИМУМ 24 СТАВНІ ВУДКИ!', '#ff5a4a'); return false; }
   if (standsOf(kind).length >= STAND_SLOTS[kind].length) { if (!silent) setMsgGlobal('ВСІ ' + STAND_SLOTS[kind].length + ' МІСЦЯ ЗАЙНЯТІ', '#ffb050'); return false; }
   if (standsOf(kind).length >= (S.rodKit[kind] || 0)) { if (!silent) setMsgGlobal('НЕМА ВУДКИ - КУПИ У МАГАЗИНІ (ВУДКИ)', '#ffb050'); return false; }
   if (!isUnlocked('unlockedModes', kind)) {
@@ -1031,9 +1068,174 @@ function placeStand(kind, silent) {
     ang: cfg.ang, dispAng: cfg.ang, wig: 0
   });
   SND.cast();
-  if (S.stands.length >= MAX_STANDS) { S.stats.full12 = 1; achvCheck(); }
+  if (S.stands.length >= 12) { S.stats.full12 = 1; achvCheck(); } // досягнення "батарея вудок" — 12 штук
   if (!silent) setMsg(m.name + ' №' + standsOf(kind).length + ' СТОЇТЬ - КЛЬОВ ЗА 2-4 ХВ', '#ffd54a', 2.4);
   return true;
+}
+
+/* ---------------- СПІНІНГОВІ СТАВКИ: ДО 3 СПІНІНГІВ ЛОВЛЯТЬ ОДНОЧАСНО ----------------
+   1 спінінг завжди в руках (як і було), докуплені стоять справа поруч і ловлять самі:
+   самі закидають, ведуть проводку, а коли риба атакує — підсікаєш [3] або кліком
+   (автоловля і робітники підсікають самі). 1 спінінг = 1 риба за якийсь час. */
+function spinStandCap() { return Math.max(0, Math.min(SPIN_STAND_MAX, S.rodKit.spin || 1) - 1); }
+function spinRest(long) {
+  let t = long ? (110 + Math.random() * 110) : (8 + Math.random() * 12);
+  if (S.weather === 'rain') t *= 0.75;
+  if (S.groundT > 0) t *= 0.7;
+  if (S.night) t *= 0.85;
+  if (S.amulet) t *= 0.85;
+  t *= 1 - 0.08 * Math.min(3, S.workers || 0);
+  if (S.fastBite) t *= 0.12;
+  return t;
+}
+function placeSpinStand(silent) {
+  if (standsOf('spin').length >= spinStandCap()) { if (!silent) setMsgGlobal('НЕМА ВІЛЬНОГО СПІНІНГА - КУПИ У МАГАЗИНІ (ВУДКИ)', '#ffb050'); return false; }
+  const slot = nextSlot('spin');
+  const cfg = STAND_SLOTS.spin[slot];
+  const rod = ROD_SPIN;
+  const tip = { x: cfg.piv.x + Math.cos(cfg.ang) * rod.len, y: cfg.piv.y + Math.sin(cfg.ang) * rod.len };
+  S.stands.push({
+    id: ++standSeq, kind: 'spin', slot, cfg,
+    phase: 'rest', restT: 4 + Math.random() * 6, t: 0,
+    lure: null, chase: null, strike: null, atkCD: rnd(1, 2),
+    sx: tip.x, sy: tip.y, tx: cfg.spot.x, ty: cfg.spot.y, flyT: 0, sinkT: 0, deep: 150,
+    ang: cfg.ang, dispAng: cfg.ang
+  });
+  SND.cast();
+  if (!silent) setMsg('СПІНІНГ №' + standsOf('spin').length + ' СТОЇТЬ І ЛОВИТЬ САМ', '#ffd54a', 2.2);
+  return true;
+}
+function toggleSpinStand(silent) {
+  const mine = standsOf('spin');
+  // 1) підсікти рибу на ставці-спінінгу
+  const striking = mine.filter(s => s.strike);
+  if (striking.length) { if (G && G.fight) setMsgGlobal('СПОЧАТКУ ВИВАЖУЙ!', '#ffb050'); else hookSpinStand(striking[0]); return; }
+  // 2) поставити ще один (1 спінінг лишається в руках)
+  if (mine.length < spinStandCap()) { if (placeSpinStand(silent)) return; }
+  // 3) забрати останній поставлений
+  if (mine.length) {
+    const st = mine[mine.length - 1];
+    if (G && G.fight && G.fight.src === st) { if (!silent) setMsgGlobal('ЗАРАЗ ВИВАЖУЄШ ЦЮ РИБУ!', '#ffb050'); return; }
+    S.stands = S.stands.filter(s => s !== st);
+    if (!silent) { setMsg('СПІНІНГ-СТАВКУ ВИТЯГНУТО (' + standsOf('spin').length + ' СТОЇТЬ)', '#e8f0f0', 1.5); SND.ui(); }
+    return;
+  }
+  if (!silent) setMsgGlobal(S.mode === 'spin' ? 'СПІНІНГ ВЖЕ В РУКАХ. ДОКУПИ ЩЕ [3]!' : 'СПІНІНГ ВЖЕ В РУКАХ', '#8aa8b0');
+}
+function trySpinChase(st, dt, paused) {
+  if (st.chase || !st.lure) return;
+  st.atkCD -= dt;
+  if (st.atkCD > 0) return;
+  st.atkCD = rnd(1.3, 2.4);
+  const l = curSpinLure();
+  const prefs = LURE_PREF[l.id] || LURE_PREF.spn;
+  const lz = zoneOf(st.lure.y);
+  const w = {};
+  for (const id in prefs) {
+    const sp = fishById(id);
+    if (!zoneOk(sp, lz)) continue;
+    let v = prefs[id] * (sp.zone === lz ? 1.4 : 0.8);
+    if (paused) v *= (id === 'pike' ? 3.5 : 0.35);
+    w[id] = v;
+  }
+  if (!Object.keys(w).length) return;
+  if (S.night) for (const id in w) if (['pike', 'zander', 'catfish', 'burbot', 'sheatfish'].includes(id)) w[id] *= 1.4;
+  let thr = 0.30 - (S.weather === 'rain' ? 0.05 : 0) - (S.amulet ? 0.03 : 0);
+  if (S.fastBite) thr += 0.45;
+  if (Math.random() > thr) return;
+  const side = st.lure.x > (PIV.x - 60) ? -1 : 1;
+  st.chase = {
+    sp: fishById(wpick(w)),
+    x: clamp(st.lure.x + side * rnd(30, 55), 10, 310),
+    y: clamp(st.lure.y + rnd(-8, 8), 92, 204),
+    t: 0
+  };
+}
+function updSpinChase(st, dt) {
+  const c = st.chase, L = st.lure;
+  if (!c || !L) return;
+  c.t += dt;
+  const d = Math.max(0.5, dist(c.x, c.y, L.x, L.y));
+  const spd = (22 + c.sp.pull * 5) * (d < 12 ? 1.45 : 1);
+  c.x += (L.x - c.x) / d * spd * dt;
+  c.y += (L.y - c.y) / d * spd * dt + Math.sin(c.t * 6) * 0.2;
+  if (d < 4.5) {
+    addSplash(L.x, L.y, true); addRipple(L.x, Math.max(88, L.y - 6), 9); SND.bite();
+    st.strike = { t: 0.95, sp: c.sp, autoT: 0 };
+    st.chase = null;
+  }
+}
+function updSpinStand(st, dt) {
+  st.t += dt;
+  // вершинка згинається при проводці/атакі
+  let target = st.cfg.ang;
+  if (st.strike) target -= 0.13 + Math.sin(st.t * 16) * 0.05;
+  else if (st.chase) target -= 0.06;
+  else if (st.phase === 'reel') target -= 0.03;
+  st.dispAng += (target - st.dispAng) * Math.min(1, dt * 10);
+  if (st.phase === 'rest') {
+    st.restT -= dt;
+    if (st.restT <= 0) {
+      const tip = standTipOf(st);
+      st.phase = 'fly'; st.flyT = 0;
+      st.sx = tip.x; st.sy = tip.y;
+      st.tx = st.cfg.spot.x + rnd(-4, 4); st.ty = st.cfg.spot.y + rnd(-3, 3);
+    }
+  } else if (st.phase === 'fly') {
+    st.flyT += dt / 0.45;
+    if (st.flyT >= 1) {
+      addSplash(st.tx, st.ty, false); addRipple(st.tx, st.ty, 9); SND.splash();
+      st.lure = { x: st.tx, y: st.ty };
+      st.deep = rnd(150, 195);
+      st.sinkT = 1.1;
+      st.phase = 'sink';
+      st.atkCD = rnd(0.8, 1.6);
+    }
+  } else if (st.phase === 'sink') {
+    st.lure.y = Math.min(206, st.lure.y + curSpinLure().sink * 2.2 * dt);
+    st.sinkT -= dt;
+    if (st.sinkT <= 0) { st.phase = 'reel'; st.atkCD = rnd(0.8, 1.6); }
+    else { trySpinChase(st, dt, st.sinkT < 0.4); if (st.chase) updSpinChase(st, dt); }
+  } else if (st.phase === 'reel') {
+    if (!st.lure) { st.phase = 'rest'; st.restT = spinRest(false); }
+    else {
+      st.lure.x += curSpinLure().retr * (S.reelUp ? 1.2 : 1) * dt;
+      st.lure.y += Math.sin(st.t * 11) * 0.12;
+      trySpinChase(st, dt, false);
+      if (st.chase) updSpinChase(st, dt);
+      if (st.lure.x > PIV.x - 30) { st.lure = null; st.chase = null; st.phase = 'rest'; st.restT = spinRest(false); }
+    }
+  }
+  if (st.strike) {
+    st.strike.t -= dt;
+    // автоловля чи робітники підсікають самі
+    if (autoActive() || (S.workers > 0)) {
+      st.strike.autoT += dt;
+      const delay = autoActive() ? 0.5 : 0.9;
+      if (st.strike.autoT > delay && !(G && G.fight)) { hookSpinStand(st); return; }
+    }
+    if (st.strike.t <= 0) {
+      st.strike = null;
+      if (st.lure) { st.phase = 'reel'; st.chase = null; }
+      else { st.phase = 'rest'; st.restT = spinRest(false); }
+    }
+  }
+}
+function hookSpinStand(st) {
+  if (!st || !st.strike || !st.lure) return;
+  if (G && G.fight) return; // спочатку виважуй поточну рибу
+  const spot = { x: st.lure.x, y: st.lure.y };
+  addSplash(spot.x, spot.y, true); addRipple(spot.x, Math.max(88, spot.y - 6), 10);
+  const sp = st.strike.sp;
+  st.strike = null; st.chase = null; st.lure = null;
+  st.phase = 'rest'; st.restT = 9999; // поки йде виважування, ставка чекає
+  SND.hook();
+  fightInit(sp, spot, st);
+}
+function spinStandLanded(st, tired) {
+  st.lure = null; st.chase = null; st.strike = null;
+  st.phase = 'rest';
+  st.restT = tired ? rnd(20, 40) : spinRest(true);
 }
 function toggleStand(kind, silent) {
   if (S.scr !== 'game') return;
@@ -1075,10 +1277,13 @@ function scheduleStand(st) {
   if (Math.random() < 0.10) st.junk = JUNK[Math.random() * JUNK.length | 0]; // інколи сміття
   else st.nextFish = fishById(wpick(w));
   // поплавочна і фідер: покльовка через 2-4 хв; дощ/прикормка/амулет прискорюють
+  // робітники теж прискорюють клів, а адмін "швидкий клів" робить його миттєвим
   let t = 120 + Math.random() * 120;
   if (S.weather === 'rain') t *= 0.75;
   if (S.groundT > 0) t *= 0.6;
   if (S.amulet) t *= 0.85;
+  t *= 1 - 0.08 * Math.min(3, S.workers || 0);
+  if (S.fastBite) t *= 0.12;
   st.biteTimer = t;
   st.nib = null;
 }
@@ -1113,6 +1318,7 @@ function hookStand(st) {
 }
 function updStand(st, dt) {
   if (!st) return;
+  if (st.kind === 'spin') { updSpinStand(st, dt); return; } // спінінг-ставка живе за своїми правилами
   const cfg = st.cfg, isF = st.kind === 'feeder';
   st.t += dt;
   // вершинка гнеться від потяжок/покльовки/виважування
@@ -1143,10 +1349,14 @@ function updStand(st, dt) {
       // покльовка: поплавок пішов під воду / квівертип тіпає
       st.bite.t -= dt;
       if (G && G.fight) st.bite.t = Math.max(st.bite.t, 0.5); // чекає, поки звільниш руки
-      // автоловля: сама підсікає (працює з будь-якою кількістю вудок: 1, 2, 12)
+      // автоловля: сама підсікає (працює з будь-якою кількістю вудок: 1, 2, 24)
+      // робітники: підсікають за ~0.9с, навіть без автоловлі
       if (autoActive()) {
         st.bite.autoT = (st.bite.autoT || 0) + dt;
         if (st.bite.autoT > 1.2 && !G.fight) { hookStand(st); return; }
+      } else if (S.workers > 0) {
+        st.bite.autoT = (st.bite.autoT || 0) + dt;
+        if (st.bite.autoT > 0.9 && !G.fight) { hookStand(st); setMsg('РОБІТНИК ПІДСІК РИБУ!', '#7be08a', 1.6); return; }
       }
       if (isF) { if (Math.random() < dt * 3) addRipple(fl.x, 86, 5); }
       else { fl.y = fl.baseY + 7; fl.tilt = 0.55; fl.x -= dt * 2; if (Math.random() < dt * 3) addRipple(fl.x, fl.baseY, 5); }
@@ -1196,7 +1406,11 @@ function selectMode(id, silent) {
   // поплавочна і фідер — ставні: кнопка/цифра ставить або забирає вудку
   if (id === 'float' || id === 'feeder') { toggleStand(id, silent); return; }
   if (G && G.phase === 'strike') { hookSpin(); return; } // цифра 3 підсікає щуку
-  if (S.mode === 'spin') { if (!silent) setMsgGlobal('СПІНІНГ ВЖЕ В РУКАХ', '#8aa8b0'); return; }
+  // риба атакує приманку на спінінг-ставці → цифра 3 підсікає її
+  const stBite = standsOf('spin').find(s => s.strike);
+  if (stBite) { if (G && G.fight) { setMsgGlobal('СПОЧАТКУ ВИВАЖУЙ!', '#ffb050'); } else hookSpinStand(stBite); return; }
+  // спінінг уже в руках: [3] ставить/забирає докуплені спінінги (до 3 ловлять зразу)
+  if (S.mode === 'spin') { toggleSpinStand(silent); return; }
   if (G && G.fight) { setMsgGlobal('СПОЧАТКУ ВИВАЖУЙ РИБУ!', '#ffb050'); return; }
   resetFishing();
   S.mode = 'spin';
@@ -1429,9 +1643,9 @@ function drawTitle(now) {
   btn(110, 104, 100, 26, 'ГРАТИ', () => { S.scr = 'pick'; SND.ui(); }, 2);
   btn(110, 196, 100, 16, 'ОНЛАЙН П2П', () => { S.scr = 'online'; SND.ui(); }, 1);
   panel(24, 142, 272, 52);
-  drawText('СТАВ ДО 12 ВУДОК РЯДОМ: ПОПЛ ЗЛІВА, ФІДЕР ЦЕНТР', 160, 146, 1, '#c8d8dc', 'center');
+  drawText('ДО 24 ВУДОК РЯДОМ (12 ПОПЛ + 12 ФІДЕР) + 3 СПІНІНГИ', 160, 146, 1, '#c8d8dc', 'center');
   drawText('КОЖНА ЛОВИТЬ САМА: 4 ВУДКИ = 4 РИБИ ЗА 2-4 ХВ', 160, 156, 1, '#c8d8dc', 'center');
-  drawText('НА ПК: ЦИФРИ 1-3, I - СКЛАД, C - ЧАТ, H - ДОВІДКА', 160, 166, 1, '#c8d8dc', 'center');
+  drawText('РОБІТНИКИ САМІ ПІДСІКАЮТЬ. НА ПК: ЦИФРИ 1-3', 160, 166, 1, '#c8d8dc', 'center');
   drawText('КВЕСТИ, ДОСЯГНЕННЯ, ПОГОДА, НІЧ, РЕКОРДИ, РІВНІ', 160, 176, 1, '#6a8a94', 'center');
   drawText('ОНЛАЙН: ПРОСТО РИБАЛКА АБО ЩУКОЛОВ + ОБМІН І ЧАТ', 160, 186, 1, '#6a8a94', 'center');
   drawText('ГРОШІ: $' + S.money, 4, 4, 1, '#ffd54a');
@@ -1682,8 +1896,21 @@ function drawFloatEdit() {
   btn(162, 178, 100, 20, 'ГОТОВО', () => { S.floatEditOpen = false; SND.ui(); }, 1);
 }
 
-/* ---------------- ОВЕРЛЕЙ: МАГАЗИН (купити силіконки, вудки, ліска, поплавки) ---------------- */
-const SHOP_TABS = ['СИЛІК', 'ВУДКИ', 'ЛІСКА', 'ПОПЛАВ', 'КРАМ', 'ПІНКОД'];
+/* ---------------- РОБІТНИКИ: помічники, що самі підсікають рибу ---------------- */
+const WORKER_SPOTS = [ { x: 102, y: 218 }, { x: 196, y: 219 }, { x: 231, y: 220 } ];
+function workerPrice() { return 1200 + (S.workers || 0) * 900; }
+function buyWorker() {
+  if ((S.workers || 0) >= 3) { setMsgGlobal('РОБІТНИКІВ ВЖЕ МАКСИМУМ (3)', '#ffb050'); return; }
+  const price = workerPrice();
+  if (S.money < price) { setMsgGlobal('НЕ ВИСТАЧАЄ ГРОШЕЙ!', '#ff5a4a'); SND.snap(); return; }
+  S.money -= price; S.workers = (S.workers || 0) + 1; save();
+  setMsgGlobal('РОБІТНИКА НАЙНЯТО! (' + S.workers + '/3) - САМ ПІДСІКАЄ РИБУ', '#7be08a');
+  addLog('РОБІТНИК НАЙНЯТИЙ $' + price, '#7be08a');
+  SND.sell();
+}
+
+/* ---------------- ОВЕРЛЕЙ: МАГАЗИН (купити силіконки, вудки, ліска, поплавки, робітники) ---------------- */
+const SHOP_TABS = ['СИЛІК', 'ВУДКИ', 'ЛІСКА', 'ПОПЛАВ', 'КРАМ', 'РОБІТН', 'ПІНКОД'];
 function drawShop() {
   ctx.fillStyle = 'rgba(4,12,18,0.72)'; ctx.fillRect(0, 0, VW, VH);
   clicks.push({ x: 0, y: 0, w: VW, h: VH, fn: () => {} });
@@ -1691,7 +1918,7 @@ function drawShop() {
   drawText('МАГАЗИН', 14, 16, 2, '#ffd54a');
   drawText('$' + S.money, 306, 20, 1, '#ffd54a', 'right');
   SHOP_TABS.forEach((t, i) => {
-    btn(14 + i * 49, 32, 47, 14, t, () => { S.shopTab = i; S.shopPage2 = 0; SND.ui(); }, 1, false, (S.shopTab || 0) === i);
+    btn(14 + i * 41, 32, 39, 14, t, () => { S.shopTab = i; S.shopPage2 = 0; SND.ui(); }, 1, false, (S.shopTab || 0) === i);
   });
   const rows = [];
   const tab = S.shopTab || 0;
@@ -1723,16 +1950,23 @@ function drawShop() {
       }
     });
     rows.push({
+      name: 'ФІДЕРНА ВУДКА +1 (МАЄШ: ' + (S.rodKit.feeder || 0) + ')',
+      hint: 'ЩЕ ОДИН ФІДЕР У РЯД. ДО 12 У СЕКЦІЇ, 24 РАЗОМ',
+      right: '$' + rodKitPrice('feeder'),
+      fn: () => buyRodKit('feeder')
+    });
+    rows.push({
+      name: 'СПІНІНГ +1 (МАЄШ: ' + (S.rodKit.spin || 1) + ')',
+      hint: 'ДО 3 СПІНІНГІВ: 1 В РУКАХ, ІНШІ СТОЯТЬ І ЛОВЛЯТЬ САМІ',
+      right: (S.rodKit.spin || 1) >= SPIN_STAND_MAX ? 'МАКС' : '$' + rodKitPrice('spin'),
+      dim: (S.rodKit.spin || 1) >= SPIN_STAND_MAX,
+      fn: () => buyRodKit('spin')
+    });
+    rows.push({
       name: 'ПОПЛАВОЧНА ВУДКА +1 (МАЄШ: ' + (S.rodKit.float || 0) + ')',
       hint: 'СТОЇТЬ РЯД. КОЖНА ЛОВИТЬ САМА: 4 ВУДКИ = 4 РИБИ',
       right: '$' + rodKitPrice('float'),
       fn: () => buyRodKit('float')
-    });
-    rows.push({
-      name: 'ФІДЕРНА ВУДКА +1 (МАЄШ: ' + (S.rodKit.feeder || 0) + ')',
-      hint: 'ЩЕ ОДИН ФІДЕР У РЯД. МАКСИМУМ 12 ВУДОК РАЗОМ',
-      right: '$' + rodKitPrice('feeder'),
-      fn: () => buyRodKit('feeder')
     });
     rows.push({
       name: 'КОТУШКА +20% ПРОВОДКА',
@@ -1824,7 +2058,28 @@ function drawShop() {
       fn: () => setMsgGlobal('БОНУС ДАЄТЬСЯ РАЗ НА ДЕНЬ', '#8aa8b0')
     });
   }
-  if (tab === 5) { drawPinTab(); return; }
+  if (tab === 5) {
+    // РОБІТНИКИ: самі підсікають рибу на ставних вудках і прискорюють клів
+    const wOwn = S.workers || 0;
+    rows.push({
+      name: 'РОБІТНИК +1 (МАЄШ: ' + wOwn + '/3)',
+      hint: 'СТОЇТЬ НА БЕРЕЗІ І САМ ПІДСІКАЄ КЛЮВУ РИБУ ЗА ~1С',
+      right: wOwn >= 3 ? 'МАКС' : '$' + workerPrice(),
+      dim: wOwn >= 3,
+      fn: () => buyWorker()
+    });
+    rows.push({
+      name: 'ЩО ВМІЄ РОБІТНИК?',
+      hint: 'ПІДСІКАЄ НА ПОПЛАВОЧНІЙ, ФІДЕРІ І СПІНІНГ-СТАВЦІ',
+      right: '', fn: () => setMsgGlobal('КЛЮВ СТАВНИХ ВУДОК +8% ШВИДШЕ ЗА КОЖНОГО РОБІТНИКА', '#8aa8b0')
+    });
+    rows.push({
+      name: 'РОБІТНИКИ + АВТОЛОВЛЯ',
+      hint: 'ПРАЦЮЮТЬ РАЗОМ: ПОТРІБНО ЛИШЕ ВИВАЖУВАТИ',
+      right: '', fn: () => setMsgGlobal('З АВТОЛОВЛЕЮ ГРА САМА ВИВАЖУЄ - РОБІТНИКИ НЕ ОБОВ\'ЯЗКОВІ', '#8aa8b0')
+    });
+  }
+  if (tab === 6) { drawPinTab(); return; }
   const perPage = 7;
   const pages = Math.max(1, Math.ceil(rows.length / perPage));
   S.shopPage2 = clamp(S.shopPage2 || 0, 0, pages - 1);
@@ -1846,7 +2101,7 @@ function drawShop() {
   btn(122, 208, 76, 18, 'ЗАКРИТИ', () => { S.shopOpen = false; SND.ui(); }, 1);
 }
 
-/* ---------------- ОВЕРЛЕЙ: СЕКРЕТНИЙ ПІН-КОД (АВТОЛОВЛЯ) ---------------- */
+/* ---------------- ОВЕРЛЕЙ: СЕКРЕТНИЙ ПІН-КОД (АВТОЛОВЛЯ + АДМІН-ФУНКЦІЇ) ---------------- */
 let _pinMsg = null;
 function setPinMsg(text, col) { _pinMsg = { text, col, t: 1.8 }; }
 function toggleAuto() {
@@ -1854,15 +2109,126 @@ function toggleAuto() {
   setPinMsg(S.autoOn ? 'АВТОЛОВЛЯ УВІМКНЕНА' : 'АВТОЛОВЛЯ ВИМКНЕНА', S.autoOn ? '#7be08a' : '#8aa8b0');
   SND.ui();
 }
+/* ---------------- АДМІН-ФУНКЦІЇ (у секретному меню за пін-кодом 1111) ---------------- */
+function adminMoney(n) {
+  S.money += n; save();
+  setPinMsg('+' + n + '$! БАЛАНС: $' + S.money, '#7be08a');
+  addLog('АДМІН: +' + n + '$', '#ffd54a');
+  SND.sell();
+}
+function adminFish(id) {
+  const sp = fishById(id || wpick(AMB_POOL));
+  const wt = sp.w[0] + (sp.w[1] - sp.w[0]) * Math.pow(Math.random(), 1.7);
+  const price = Math.max(1, Math.round(sp.ppk * wt));
+  if (invTotal() >= MAX_FISH) { S.money += price; }
+  else {
+    const inv = S.inv[sp.id] || (S.inv[sp.id] = { n: 0, kg: 0, val: 0 });
+    inv.n++; inv.kg += wt; inv.val += price;
+  }
+  if (!S.records[sp.id] || wt > S.records[sp.id]) S.records[sp.id] = wt;
+  S.stats.catches++; S.stats.bySp[sp.id] = (S.stats.bySp[sp.id] || 0) + 1;
+  save();
+  setPinMsg('ВИДАНО: ' + sp.name + ' ' + wt.toFixed(2) + 'КГ', '#7be08a');
+  addLog('АДМІН: ' + sp.name, '#7be08a');
+  SND.catchF();
+}
+function adminLevel() {
+  addXP(100 + (S.level - 1) * 80);
+  save();
+  setPinMsg('РІВЕНЬ ' + S.level + '!', '#7be08a');
+}
+function adminFastBite() {
+  S.fastBite = !S.fastBite; save();
+  setPinMsg(S.fastBite ? 'ШВИДКИЙ КЛЬОВ: УВІМК (x8)' : 'ШВИДКИЙ КЛЬОВ: ВИМК', S.fastBite ? '#7be08a' : '#8aa8b0');
+  SND.ui();
+}
+function adminAllLures() {
+  LURES.forEach(l => { if (!S.unlockedLures.includes(l.id)) S.unlockedLures.push(l.id); });
+  save();
+  setPinMsg('ВСІ СИЛІКОНКИ ВІДКРИТО (' + S.unlockedLures.length + ')', '#7be08a');
+  addLog('АДМІН: ВСІ СИЛІКОНКИ', '#ffd54a');
+  SND.sell();
+}
+function adminAllGear() {
+  RODS.forEach(r => { if (!S.unlockedRods.includes(r.id)) S.unlockedRods.push(r.id); });
+  LINES.forEach(l => { if (!S.unlockedLines.includes(l.id)) S.unlockedLines.push(l.id); });
+  FLOATS.forEach(f => { if (!S.unlockedFloats.includes(f.id)) S.unlockedFloats.push(f.id); });
+  BAITS.forEach(b => { if (!S.unlockedBaits.includes(b.id)) S.unlockedBaits.push(b.id); });
+  if (!S.unlockedModes.includes('feeder')) S.unlockedModes.push('feeder');
+  save();
+  setPinMsg('ВСІ ВУДКИ, ЛІСКИ, ПОПЛАВКИ, НАЖИВКИ!', '#7be08a');
+  addLog('АДМІН: ВСІ ТОВАРИ', '#ffd54a');
+  SND.sell();
+}
+function adminGold() {
+  S.goldT = 40; S.goldCD = rnd(240, 420); save();
+  setPinMsg('ЗОЛОТА РИБА! ВСІ ЦІНИ x2 (40С)', '#ffd54a');
+  addLog('АДМІН: ЗОЛОТА РИБА', '#ffd54a');
+  SND.catchF();
+}
+function adminWeather() {
+  S.weather = S.weather === 'rain' ? 'clear' : 'rain'; S.wT = 180; save();
+  setPinMsg(S.weather === 'rain' ? 'ДОЩ! КЛЮЄ ШВИДШЕ' : 'ЯСНО', '#8fd0e8');
+  SND.ui();
+}
+function adminNight() {
+  S.night = !S.night; S.dayT = 260; save();
+  setPinMsg(S.night ? 'НІЧ - ХИЖАКИ АКТИВНІШІ' : 'ДЕНЬ', '#8fd0e8');
+  SND.ui();
+}
+function adminClearInv() {
+  S.inv = {}; save();
+  setPinMsg('СКЛАД ОЧИЩЕНО', '#8aa8b0');
+  SND.ui();
+}
+function adminFreeRod() {
+  const k = (S.rodKit.float || 0) <= (S.rodKit.feeder || 0) ? 'float' : 'feeder';
+  if ((S.rodKit[k] || 0) >= MAX_PER_KIND) { setPinMsg('ЦЯ СЕКЦІЯ ВЖЕ 12/12', '#ffb050'); return; }
+  S.rodKit[k] = (S.rodKit[k] || 0) + 1; save();
+  setPinMsg('БЕЗКОШТОВНА ВУДКА (' + (k === 'float' ? 'ПОПЛАВОЧНА' : 'ФІДЕР') + ' №' + S.rodKit[k] + ')!', '#7be08a');
+  addLog('АДМІН: БЕЗКОШТОВНА ВУДКА', '#ffd54a');
+  SND.sell();
+}
+function adminFreeSpin() {
+  if ((S.rodKit.spin || 1) >= SPIN_STAND_MAX) { setPinMsg('СПІНІНГІВ ВЖЕ МАКСИМУМ (3)', '#ffb050'); return; }
+  S.rodKit.spin = (S.rodKit.spin || 1) + 1; save();
+  setPinMsg('БЕЗКОШТОВНИЙ СПІНІНГ №' + S.rodKit.spin + '! НАЖМИ [3]', '#7be08a');
+  addLog('АДМІН: БЕЗКОШТОВНИЙ СПІНІНГ', '#ffd54a');
+  SND.sell();
+}
+function adminWorker() {
+  if ((S.workers || 0) >= 3) { setPinMsg('РОБІТНИКІВ ВЖЕ МАКСИМУМ (3)', '#ffb050'); return; }
+  S.workers = (S.workers || 0) + 1; save();
+  setPinMsg('РОБІТНИКА НАЙНЯТО БЕЗКОШТОВНО (' + S.workers + '/3)', '#7be08a');
+  addLog('АДМІН: РОБІТНИК', '#ffd54a');
+  SND.sell();
+}
 function drawPinTab() {
   if (S.autoUnlocked) {
-    drawText('СЕКРЕТНИЙ РЕЖИМ АКТИВОВАНО!', 160, 58, 1, '#6ac86a', 'center');
-    drawText('ГРА САМА ПІДСІКАЄ, ВИВАЖУЄ', 160, 78, 1, '#c8d8dc', 'center');
-    drawText('І САМА ЗАКИДАЄ СПІНІНГ.', 160, 88, 1, '#c8d8dc', 'center');
-    drawText('ПРАЦЮЄ З УСІМА 12 СТАВНИМИ ВУДКАМИ', 160, 104, 1, '#c8d8dc', 'center');
-    drawText('І В ОНЛАЙНІ З ДРУГОМ.', 160, 114, 1, '#c8d8dc', 'center');
-    btn(70, 138, 180, 26, S.autoOn ? 'АВТОЛОВЛЯ: УВІМК' : 'АВТОЛОВЛЯ: ВИМК', toggleAuto, 1, false, S.autoOn);
-    drawText('У ГРІ СПРАВА ЗГОРИ Є КНОПКА АВТО', 160, 174, 1, '#5a747e', 'center');
+    drawText('СЕКРЕТНИЙ РЕЖИМ АКТИВОВАНО!', 160, 50, 1, '#6ac86a', 'center');
+    btn(70, 60, 180, 16, S.autoOn ? 'АВТОЛОВЛЯ: УВІМК' : 'АВТОЛОВЛЯ: ВИМК', toggleAuto, 1, false, S.autoOn);
+    drawText('АДМІН-ФУНКЦІЇ:', 14, 80, 1, '#8fd0e8');
+    const adm = [
+      { l: '+$1000',            fn: () => adminMoney(1000) },
+      { l: '+$10000',           fn: () => adminMoney(10000) },
+      { l: '+1 РІВЕНЬ',         fn: adminLevel },
+      { l: '+ РИБА НА СКЛАД',   fn: () => adminFish() },
+      { l: '+5 ЩУК',            fn: () => { for (let i = 0; i < 5; i++) adminFish('pike'); } },
+      { l: 'ШВИДКИЙ КЛЬОВ',     fn: adminFastBite, sel: !!S.fastBite },
+      { l: 'ВСІ СИЛІКОНКИ',     fn: adminAllLures },
+      { l: 'ВСІ ТОВАРИ',        fn: adminAllGear },
+      { l: 'БЕЗКОШТ. ВУДКА',    fn: adminFreeRod },
+      { l: 'БЕЗКОШТ. СПІНІНГ',  fn: adminFreeSpin },
+      { l: 'БЕЗКОШТ. РОБІТНИК', fn: adminWorker },
+      { l: 'ЗОЛОТА РИБА x2',    fn: adminGold },
+      { l: 'ДОЩ / ЯСНО',        fn: adminWeather },
+      { l: 'НІЧ / ДЕНЬ',        fn: adminNight },
+      { l: 'СКАСУВАТИ СКЛАД',   fn: adminClearInv }
+    ];
+    adm.forEach((d, i) => {
+      const col = i % 2, row = (i / 2) | 0;
+      btn(14 + col * 150, 88 + row * 13, 144, 12, d.l, d.fn, 1, false, d.sel);
+    });
   } else {
     drawText('ВВЕДИ ПІН-КОД (4 ЦИФРИ):', 160, 52, 1, '#c8d8dc', 'center');
     const buf = S.pinBuf || '';
@@ -1883,7 +2249,7 @@ function drawPinTab() {
     btn(110, 182, 100, 18, 'УВІЙТИ', () => {
       if ((S.pinBuf || '') === '1111') {
         S.autoUnlocked = true; S.autoOn = true; S.pinBuf = ''; save();
-        setPinMsg('АВТОЛОВЛЯ ВІДКРИТА!', '#7be08a');
+        setPinMsg('АВТОЛОВЛЯ І АДМІНКА ВІДКРИТІ!', '#7be08a');
         SND.catchF();
       } else {
         S.pinBuf = '';
@@ -1894,7 +2260,7 @@ function drawPinTab() {
   }
   btn(122, 208, 76, 18, 'ЗАКРИТИ', () => { S.shopOpen = false; SND.ui(); }, 1);
   if (_pinMsg) {
-    drawText(_pinMsg.text, 160, 200, 1, _pinMsg.col, 'center');
+    drawText(_pinMsg.text, 160, 202, 1, _pinMsg.col, 'center');
     _pinMsg.t -= 1 / 60; if (_pinMsg.t <= 0) _pinMsg = null;
   }
 }
@@ -2059,16 +2425,19 @@ function drawHelp() {
     ['#c8d8dc', 'КЛЮЄ? КЛІК ПО ПОПЛАВКУ АБО [1]/[2]'],
     ['#c8d8dc', 'ТРИМАЙ ЛКМ: ПРОВОДКА І ВИВАЖУВАННЯ'],
     ['#ffd54a', 'ЯК ЦЕ ПРАЦЮЄ:'],
-    ['#c8d8dc', 'СТАВНІ ВУДКИ СТОЯТЬ РЯДОМ (МАКС 12)'],
+    ['#c8d8dc', 'СТАВНІ ВУДКИ РЯДОМ: ДО 12 ПОПЛ + 12 ФІДЕР'],
     ['#c8d8dc', 'КОЖНА ЛОВИТЬ САМА: 4 ВУДКИ = 4 РИБИ'],
+    ['#c8d8dc', 'ДО 3 СПІНІНГІВ: 1 В РУКАХ, ІНШІ ЛОВЛЯТЬ САМІ'],
+    ['#c8d8dc', '[3] - ПОСТАВИТИ/ЗАБРАТИ СПІНІНГ-СТАВКУ'],
     ['#c8d8dc', 'КЛЬОВ СТАВНИХ 2-4 ХВ. ДОЩ, ПРИКОРМКА'],
     ['#c8d8dc', 'І АМУЛЕТ - ШВИДШЕ. НІЧ - ХИЖАКИ'],
-    ['#c8d8dc', 'ПІН-КОД У МАГАЗИНІ - АВТОЛОВЛЯ'],
+    ['#c8d8dc', 'РОБІТНИКИ САМІ ПІДСІКАЮТЬ (МАГАЗИН)'],
+    ['#c8d8dc', 'ПІН-КОД 1111 У МАГАЗИНІ - АВТОЛОВЛЯ + АДМІНКА'],
     ['#ffd54a', 'НОВЕ: РІВНІ, РЕКОРДИ, РІДКІСТЬ, КВЕСТИ,'],
     ['#c8d8dc', 'ДОСЯГНЕННЯ, ЗОЛОТА РИБА, СМІТТЯ, ЛОГ,'],
     ['#c8d8dc', 'КОТУШКА, ЩУЧА СИЛІКОНКА, ЛОСОСЬ, ТАЙМЕНЬ']
   ];
-  L.forEach((l, i) => drawText(l[1], 16, 32 + i * 10, 1, l[0]));
+  L.forEach((l, i) => drawText(l[1], 16, 32 + i * 8, 1, l[0]));
   drawText('ДОСЯГНЕННЯ: ' + Object.keys(S.achv).length + '/' + ACHV.length + '  ЛОГ:', 16, 174, 1, '#8fd0e8');
   (S.log || []).slice(0, 3).forEach((l, i) => drawText('- ' + l.text, 16, 184 + i * 8, 1, l.col));
   btn(122, 212, 76, 16, 'ЗАКРИТИ (H)', () => { S.helpOpen = false; SND.ui(); }, 1);
@@ -2298,7 +2667,8 @@ function scheduleBite() {
   const id = wpick(w);
   G.nextFish = fishById(id);
   // поплавочна і фідер: перша покльовка через 2-4 хв після закиду
-  G.biteTimer = 120 + Math.random() * 120;
+  // (адмін "швидкий кльов" робить x8 швидше)
+  G.biteTimer = (120 + Math.random() * 120) * (S.fastBite ? 0.12 : 1);
   G.nib = null;
 }
 function startNibble() {
@@ -2454,6 +2824,7 @@ function updFight(dt) {
     else {
       // ставна вудка лишається стояти, спінінг продовжує проводку
       if (src && src.float) { src.float.y = src.float.baseY; src.float.x = src.float.baseX; src.float.tilt = 0; src.phase = 'wait'; scheduleStand(src); }
+      else if (src && src.kind === 'spin') spinStandLanded(src, true); // спінінг-ставка: короткий перепочинок і знову ловить
       G.phase = (G.spinBack && G.lure) ? G.spinBack : 'idle';
       G.spinBack = null;
     }
@@ -2505,6 +2876,10 @@ function gameClick(x, y) {
   if (!G.fight && G.phase !== 'show') {
     for (const st of S.stands) {
       if (st.bite && st.float && dist(x, y, st.float.x, st.float.y) < 16) { hookStand(st); return; }
+    }
+    // підсічка на спінінг-ставці: клік по приманці, яку атакує риба
+    for (const st of standsOf('spin')) {
+      if (st.strike && st.lure && dist(x, y, st.lure.x, st.lure.y) < 18) { hookSpinStand(st); return; }
     }
   }
   const ph = G.phase;
@@ -2720,7 +3095,8 @@ function update(dt) {
     }
   }
   else if (G.phase === 'fight') {
-    updFight(dt);
+    if (G.fight) updFight(dt);
+    else G.phase = 'idle'; // страховка: бій зник — повертаємось у гру
   }
   else if (G.phase === 'show') {
     G.show.t -= dt;
@@ -2729,9 +3105,12 @@ function update(dt) {
       G.show = null; G.showSrc = null;
       if (src && src !== 'held') {
         // ставна вудка лишається стояти і одразу чекає наступної покльовки
-        if (src.float) { src.float.y = src.float.baseY; src.float.x = src.float.baseX; src.float.tilt = 0; }
-        src.phase = 'wait';
-        scheduleStand(src);
+        if (src.kind === 'spin') spinStandLanded(src, false); // спінінг-ставка: перепочинок і знову ловить
+        else {
+          if (src.float) { src.float.y = src.float.baseY; src.float.x = src.float.baseX; src.float.tilt = 0; }
+          src.phase = 'wait';
+          scheduleStand(src);
+        }
         G.phase = (G.spinBack && G.lure) ? G.spinBack : 'idle';
         G.spinBack = null;
       } else { G.phase = 'idle'; G.spinBack = null; }
@@ -2789,11 +3168,11 @@ function drawLineNow() {
   else return;
   pixLine(rodTipPos().x, rodTipPos().y, tx, ty, sag, 'rgba(14,24,30,0.85)');
 }
-/* ---------------- СТАВНІ ВУДКИ НА БЕРЕЗІ (до 12, поруч одна біля одної) ---------------- */
+/* ---------------- СТАВНІ ВУДКИ НА БЕРЕЗІ (до 24, поруч одна біля одної) ---------------- */
 function drawStands(now) {
   for (const st of S.stands) {
     const cfg = st.cfg, kind = st.kind;
-    const rod = kind === 'float' ? ROD_FLOAT : ROD_FEEDER;
+    const rod = kind === 'float' ? ROD_FLOAT : kind === 'feeder' ? ROD_FEEDER : ROD_SPIN;
     // рогатка-підставка
     ctx.fillStyle = '#4a3620'; ctx.fillRect(cfg.piv.x - 4, cfg.piv.y + 3, 10, 4);
     ctx.fillStyle = '#7a5c38'; ctx.fillRect(cfg.piv.x - 4, cfg.piv.y + 3, 10, 1);
@@ -2804,6 +3183,27 @@ function drawStands(now) {
     ctx.drawImage(rod.img, -rod.piv.x, -rod.piv.y);
     ctx.restore();
     const tip = standTipOf(st);
+    if (kind === 'spin') {
+      // спінінг-ставка: приманка, погоня і '!%' при атаці
+      const L = curSpinLure();
+      if (st.phase === 'fly') {
+        const t = Math.min(1, st.flyT);
+        const fx = st.sx + (st.tx - st.sx) * t;
+        const fy = st.sy + (st.ty - st.sy) * t - Math.sin(Math.PI * t) * 10;
+        pixLine(tip.x, tip.y, fx, fy, 2, 'rgba(14,24,30,0.8)');
+        blit(L.spr.frames[0], fx, fy, 1, false);
+      } else if (st.lure) {
+        pixLine(tip.x, tip.y, st.lure.x, st.lure.y, st.phase === 'reel' ? 2 : 6, 'rgba(14,24,30,0.7)');
+        const fr = st.phase === 'reel' ? (now / 90 | 0) % 2 : (now / 260 | 0) % 2;
+        blit(L.spr.frames[fr], st.lure.x, st.lure.y, 1, true);
+      }
+      if (st.chase) blit(st.chase.sp.spr.frames[(now / 110 | 0) % 2], st.chase.x, st.chase.y, 1.5, st.lure && st.lure.x > st.chase.x);
+      if (st.strike && st.lure) {
+        const fl2 = (now / 160 | 0) % 2 === 0;
+        drawText('!', st.lure.x, st.lure.y - 18, 2, fl2 ? '#ff5a4a' : '#ffe0dc', 'center');
+      }
+      continue;
+    }
     if (st.phase === 'fly') {
       const t = Math.min(1, st.flyT);
       const fx = st.sx + (st.tx - st.sx) * t;
@@ -2878,6 +3278,28 @@ function bar(x, y, w, h, frac) {
   ctx.fillStyle = frac > 0.55 ? '#6ac86a' : frac > 0.28 ? '#e8c83a' : '#e85a4a';
   ctx.fillRect(x, y, Math.round(w * frac), h);
 }
+/* ---------------- РОБІТНИКИ НА БЕРЕЗІ (куплені помічники) ---------------- */
+function drawWorkers(now) {
+  for (let i = 0; i < (S.workers || 0); i++) {
+    const w = WORKER_SPOTS[i]; if (!w) continue;
+    const b = Math.round(Math.sin(now / 500 + i * 2) * 0.9);
+    const x = w.x, y = w.y + b;
+    // ноги
+    P(ctx, '#2a2e34', x - 2, y + 8, 2, 5); P(ctx, '#2a2e34', x + 1, y + 8, 2, 5);
+    // тулуб (робоча куртка)
+    P(ctx, i % 2 ? '#3a7a5a' : '#3a6a8a', x - 3, y + 1, 7, 8);
+    P(ctx, i % 2 ? '#2c5e44' : '#2c5068', x - 3, y + 1, 7, 2);
+    // голова
+    P(ctx, '#e8b088', x - 2, y - 4, 5, 5);
+    P(ctx, '#101418', x - 1, y - 3, 1, 1); P(ctx, '#101418', x + 1, y - 3, 1, 1);
+    // капелюх
+    P(ctx, '#e8a23a', x - 4, y - 5, 9, 2);
+    P(ctx, '#e8a23a', x - 3, y - 7, 7, 2);
+    // підсак у руці
+    P(ctx, '#7a5c38', x + 3, y + 2, 1, 6);
+    P(ctx, '#c8ccd0', x + 2, y + 8, 3, 3);
+  }
+}
 /* ---------------- погода / ніч (індикатор зліва) ---------------- */
 function drawWeather(x, y) {
   panel(x, y, 44, 14);
@@ -2914,13 +3336,16 @@ function drawHud(now) {
   // на ПК те саме роблять цифри 1-3 (працює з будь-якою розкладкою)
   const fP = standsOf('float').length, fO = S.rodKit.float || 0;
   const dP = standsOf('feeder').length, dO = S.rodKit.feeder || 0;
+  const sP = standsOf('spin').length, sO = Math.max(0, (S.rodKit.spin || 1) - 1);
   const fB = standsOf('float').some(s => s.bite), dB = standsOf('feeder').some(s => s.bite);
+  const sB = standsOf('spin').some(s => s.strike);
   const fedLock = !isUnlocked('unlockedModes', 'feeder');
   const flbl = fB ? 'КЛЮЄ!' : (fP < fO ? '+ ПОПЛ ' + fP + '/' + fO : fP ? 'ЗАБРАТИ ' + fP : 'ПОПЛ');
   btn(2, 225, 62, 13, flbl, () => { toggleStand('float'); }, 1, false, fP > 0);
   const dlbl = dB ? 'КЛЮЄ!' : fedLock ? 'ФІДЕР $300' : (dP < dO ? '+ ФІДЕР ' + dP + '/' + dO : dP ? 'ЗАБРАТИ ' + dP : 'ФІДЕР');
   btn(129, 225, 62, 13, dlbl, () => { toggleStand('feeder'); }, 1, false, dP > 0);
-  btn(256, 225, 62, 13, 'СПІН', () => { selectMode('spin'); }, 1, false, true);
+  const slbl = sB ? 'КЛЮЄ!' : (sP < sO ? '+ СПІН ' + sP + '/' + sO : sP ? 'ЗАБРАТИ ' + sP : 'СПІН');
+  btn(256, 225, 62, 13, slbl, () => { selectMode('spin'); }, 1, false, true);
   // Примітка: під час підсічки кнопка СПІН / цифра 3 засікає рибу (див. selectMode)
   const tip = tipText();
   if (tip) drawText(tip, 150, 214, 1, '#eef4f6', 'center');
@@ -2940,15 +3365,20 @@ function drawHud(now) {
   if (S.comp) drawCompHud();
   // хто клює на ставних вудках (понад усе)
   const bf = standsOf('float').filter(s => s.bite).length, bd = standsOf('feeder').filter(s => s.bite).length;
+  const bs = standsOf('spin').filter(s => s.strike).length;
+  const bTot = bf + bd + bs;
   let sa = null;
-  if (bf && bd) sa = 'КЛЮЄ НА ' + (bf + bd) + ' ВУДКАХ! [1] АБО [2]';
-  else if (bf) sa = 'КЛЮЄ НА ПОПЛАВОЧНУ' + (bf > 1 ? ' (' + bf + ')' : '') + '! НАЖМИ [1]';
-  else if (bd) sa = 'КЛЮЄ НА ФІДЕР' + (bd > 1 ? ' (' + bd + ')' : '') + '! НАЖМИ [2]';
+  if (bTot > 1) sa = 'КЛЮЄ НА ' + bTot + ' ВУДКАХ! [1] [2] [3]';
+  else if (bf) sa = 'КЛЮЄ НА ПОПЛАВОЧНУ! НАЖМИ [1]';
+  else if (bd) sa = 'КЛЮЄ НА ФІДЕР! НАЖМИ [2]';
+  else if (bs) sa = 'РИБА АТАКУЄ СПІНІНГ-СТАВКУ! НАЖМИ [3]';
   if (sa) drawText(sa, 150, 74, 1, (now / 160 | 0) % 2 === 0 ? '#ff5a4a' : '#ffe0dc', 'center');
-  // рядок статусу: потяжки / золота риба / прикормка / найшвидший кльов
+  // рядок статусу: потяжки / золота риба / прикормка / найшвидший кльов / робітники
   const bits = [];
   const nibN = S.stands.filter(s => s.nib).length;
   if (nibN) bits.push('ПОТЯЖКИ: ' + nibN);
+  if ((S.workers || 0) > 0) bits.push('РОБІТНИКИ: ' + S.workers);
+  if (S.fastBite) bits.push('ШВИДКИЙ КЛЬОВ');
   if (S.goldT > 0) bits.push('ЗОЛОТА x2: ' + Math.ceil(S.goldT) + 'С');
   if (S.groundT > 0) bits.push('ПРИК: ' + fmtT(S.groundT));
   const waiting = S.stands.filter(s => s.phase === 'wait' && !s.bite && !s.nib && s.biteTimer > 0);
@@ -3016,6 +3446,7 @@ function drawGame(now) {
   }
   drawTackleOnWater(now);
   drawStands(now);
+  drawWorkers(now);
   drawLineNow();
   drawRod();
   if (G.phase === 'fight' && G.fight) {
@@ -3041,7 +3472,7 @@ function loop(ts) {
   const dt = Math.min(0.05, (ts - last) / 1000) || 0.016;
   last = ts;
   clicks = [];
-  update(dt);
+  try { update(dt); } catch (e) { /* страховка: гра не "вмирає" через один збій */ }
   if (S.scr === 'title') { drawBG(); drawTitle(ts); }
   else if (S.scr === 'pick') { drawBG(); drawPick(ts); }
   else if (S.scr === 'tackle') { drawBG(); drawTackle(ts); }
@@ -3070,10 +3501,17 @@ window.__dbg = {
   strike: () => { if (G.lure) { G.chase = { sp: fishById('pike'), x: G.lure.x + 8, y: G.lure.y, t: 0 }; G.phase = 'strike'; G.strikeT = 0.95; } },
   fight: (id) => { if (S.scr === 'game') fightInit(fishById(id || 'pike'), { x: 160, y: 150 }); },
   catchFish: (id) => { if (S.scr === 'game') { fightInit(fishById(id || 'perch'), { x: 160, y: 150 }); G.fight.D = 24; } },
-  stand: (k) => { if (S.scr === 'game') placeStand(k || 'float', true); },
-  rod: (k, n) => { const kk = k || 'float'; S.rodKit[kk] = Math.min(6, (S.rodKit[kk] || 0) + (n || 1)); },
-  biteStand: (k) => { const arr = standsOf(k || 'float'); if (arr.length) { const st = arr[0]; st.phase = 'wait'; st.biteTimer = 0.01; } },
-  auto: (on) => { S.autoUnlocked = true; S.autoOn = on === undefined ? true : !!on; },
+  stand: (k) => { if (S.scr === 'game') { if (k === 'spin') placeSpinStand(true); else placeStand(k || 'float', true); } },
+  rod: (k, n) => { const kk = k || 'float'; const cap = kk === 'spin' ? SPIN_STAND_MAX : MAX_PER_KIND; S.rodKit[kk] = Math.min(cap, (S.rodKit[kk] || 1) + (n || 1)); },
+  biteStand: (k) => {
+    const arr = standsOf(k || 'float'); if (!arr.length) return;
+    const st = arr[0];
+    if (st.kind === 'spin') { st.phase = 'reel'; st.lure = { x: st.cfg.spot.x, y: st.cfg.spot.y }; trySpinChase(st, 0.01, true); if (!st.chase) { st.chase = { sp: fishById('pike'), x: st.lure.x - 20, y: st.lure.y, t: 0 }; } }
+    else { st.phase = 'wait'; st.biteTimer = 0.01; }
+  },
+  strikeSpin: (n) => { const arr = standsOf('spin'); const st = arr[n || 0]; if (st) { st.phase = 'reel'; st.lure = { x: st.cfg.spot.x, y: st.cfg.spot.y }; st.strike = { t: 3, sp: fishById('pike'), autoT: 0 }; } },
+  worker: (n) => { S.workers = clamp(n === undefined ? 1 : n, 0, 3); save(); },
+  admin: (on) => { S.autoUnlocked = true; S.autoOn = on === undefined ? true : !!on; },
   pinLock: () => { S.autoUnlocked = false; S.autoOn = false; S.pinBuf = ''; save(); },
   go: (scr) => { S.scr = scr; if (scr === 'game') { S.mode = 'spin'; S.tIdx = S.tIdxSpin || 0; initGame(); } }
 };
